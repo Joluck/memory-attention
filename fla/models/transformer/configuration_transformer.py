@@ -40,12 +40,9 @@ class TransformerConfig(PretrainedConfig):
         attn_type: str = "mha",
         use_gate: bool = False,
         use_head_gate: bool = False,
-        use_exa: bool = False,
-        lora_rank: int = 64,
         **kwargs,
     ):
-        self.lora_rank = lora_rank
-        self.use_exa = use_exa
+
         self.use_gate = use_gate
         self.use_head_gate = use_head_gate
         self.attn_type = attn_type

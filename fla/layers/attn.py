@@ -50,8 +50,6 @@ class Attention(nn.Module):
         attn_type: str = 'mok',
         use_gate: bool = False,
         use_head_gate: bool = False,
-        use_exa: bool = False,
-        lora_rank: int = 64,
         vocab_size: int | None = None,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
@@ -82,36 +80,16 @@ class Attention(nn.Module):
         self.att = attn_type
         self.use_gate = use_gate
         self.use_head_gate = use_head_gate
-        self.use_exa = use_exa
-        self.lora_rank = lora_rank
         self.v_dim = self.head_dim
-        if self.att == 'mqa': 
-            self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
-            self.k_proj = nn.Linear(self.hidden_size, self.head_dim, bias=self.qkv_bias)
-            self.v_proj = nn.Linear(self.hidden_size, self.head_dim, bias=self.qkv_bias)
-            self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
-        ## GQA
-        if self.att == 'gqa':
-            self.group = self.num_heads//2
-            self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
-            self.k_proj = nn.Linear(self.hidden_size, self.head_dim*self.group, bias=self.qkv_bias)
-            self.v_proj = nn.Linear(self.hidden_size, self.head_dim*self.group, bias=self.qkv_bias)
-            self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-
-        # MHA
-        if self.att == 'mha':
-            self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
-            self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-            self.v_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-            self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
+        self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.v_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
         # MHA with keys looked up from a per-layer token embedding
-        if self.att == 'emb':
-            self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
+        if self.att == 'eva':
             self.v_emb = nn.Embedding(vocab_size, self.kv_dim)
-            self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-            self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
             self.v_norm = RMSNorm(self.head_dim, dtype=torch.float32)
         if self.att=='mla':
             self.kv_rank = self.head_dim*4
@@ -128,14 +106,10 @@ class Attention(nn.Module):
             self.k_norm = RMSNorm(self.head_dim, dtype=torch.float32)
         self.rotary = RotaryEmbedding(dim=self.head_dim, base=self.rope_theta)
         if self.use_gate:
-            # self.gate = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
-            self.gate = Diag(self.hidden_size, self.hidden_size, rank=self.num_heads//2, bias=False)
+            self.gate = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
         if self.use_head_gate:
             self.head_gate = nn.Linear(self.hidden_size, self.num_heads, bias=self.qkv_bias)
-            # self.block_gate = nn.Linear(self.hidden_size, self.hidden_size//self.num_heads, bias=self.qkv_bias)
-            self.reset_head_gate_stats()
-            _register_head_gate_module(self)
-       
+
 
     def forward(
         self,
@@ -144,6 +118,7 @@ class Attention(nn.Module):
         past_key_values: Cache | None = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        input_ids: torch.LongTensor | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         if attention_mask is not None:
@@ -164,17 +139,16 @@ class Attention(nn.Module):
             q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
             k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
             v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
-        elif self.att=='emb':
-            input_ids = kwargs.get('input_ids')
+        elif self.att=='eva':
             if input_ids is None:
-                raise ValueError("`input_ids` must be provided when attn_type='emb'")
+                raise ValueError("`input_ids` must be provided when attn_type='eva'")
             q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_emb(input_ids)
             q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
             k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
             v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
-            #k = v
+
             v = k+self.v_norm(v)
-            #k = self.k_norm(k+v)
+
 
         else:
             q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(hidden_states)

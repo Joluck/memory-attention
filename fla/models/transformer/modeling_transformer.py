@@ -52,8 +52,6 @@ class TransformerBlock(GradientCheckpointingLayer):
             attn_type=config.attn_type,
             use_gate=config.use_gate,
             use_head_gate=config.use_head_gate,
-            use_exa=config.use_exa,
-            lora_rank=config.lora_rank,
             vocab_size=config.vocab_size,
         )
 
@@ -232,7 +230,6 @@ class TransformerModel(TransformerPreTrainedModel):
                 output_attentions=output_attentions,
                 use_cache=use_cache,
                 input_ids=input_ids,
-                inputs_embeds=inputs_embeds,
                 **kwargs,
             )
 
