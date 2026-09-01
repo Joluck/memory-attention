@@ -89,8 +89,11 @@ class Attention(nn.Module):
 
         # MHA with keys looked up from a per-layer token embedding
         if self.att == 'eva':
-            self.v_emb = nn.Embedding(vocab_size, self.kv_dim)
+            self.v_proj = nn.Embedding(vocab_size, self.kv_dim)
             self.v_norm = RMSNorm(self.head_dim, dtype=torch.float32)
+        # if self.att == 'eva':
+        #     self.v_emb = nn.Embedding(vocab_size, self.kv_dim)
+        #     self.lamb = nn.Parameter(torch.tensor([0.5]))
         if self.att=='mla':
             self.kv_rank = self.head_dim*4
             self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
@@ -142,20 +145,26 @@ class Attention(nn.Module):
         elif self.att=='eva':
             if input_ids is None:
                 raise ValueError("`input_ids` must be provided when attn_type='eva'")
-            q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_emb(input_ids)
+            q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(input_ids)
             q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
             k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
             v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
 
             v = k+self.v_norm(v)
-
+        # elif self.att=='eva':
+        #     if input_ids is None:
+        #         raise ValueError("`input_ids` must be provided when attn_type='eva'")
+        #     q,k,v,ve = self.q_proj(hidden_states), self.k_proj(hidden_states),self.v_proj(hidden_states), self.v_emb(input_ids)
+        #     q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
+        #     k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
+        #     v = (1 - self.lamb) * v + self.lamb * ve
+        #     v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
 
         else:
             q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(hidden_states)
             q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
             k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
             v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
-
 
         if self.qk_norm:
             q, k = self.q_norm(q), self.k_norm(k)
