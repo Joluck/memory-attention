@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Memory Attention: token-indexed memory and contextual keys for language model attention. Paper, code, results, and interactive demo.">
+<meta name="theme-color" content="#faf7ef"><title>Memory Attention — Jiale Kang</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#faf7ef;
+  --paper:#fffdf8;
+  --ink:#221e16;
+  --body:#544e41;
+  --muted:#938d7e;
+  --faint:#b6b0a2;
+  --hairline:rgba(34,30,22,.10);
+  --hairline-strong:rgba(34,30,22,.18);
+
+  --green:#43745a;
+  --pale:#e8f1e9;
+  --blue:#477493;
+  --bpal:#e9f1f5;
+  --copper:#9b6b40;
+  --cpale:#f6eee2;
+  --empty:#f4f1ea;
+  --shadow:0 1px 2px rgba(34,30,22,.025),0 16px 48px -14px rgba(34,30,22,.09);
+
+  --serif:"Fraunces",Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font:15px/1.75 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+body::after{
+  content:"";
+  position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:300px 300px;
+}
+::selection{background:#cfe2d3;color:var(--ink)}
+a{color:inherit}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{
+  outline:1.5px solid var(--green);outline-offset:3px;border-radius:4px;
+}
+
+.wrap{max-width:1190px;margin:auto;padding:0 30px}
+
+/* ─── Entrance ─── */
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.nav,.hero,section.content{animation:rise .9s cubic-bezier(.22,1,.36,1) both}
+.hero{animation-delay:.05s}
+#abstract{animation-delay:.12s}
+
+/* ─── Navigation ─── */
+.nav{
+  height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  border-bottom:1px solid var(--hairline);
+  box-shadow:0 4px 0 -3px var(--bg),0 5px 0 -3px var(--hairline);
+}
+.brand{
+  font-family:var(--serif);font-weight:480;font-size:19px;
+  letter-spacing:-.01em;text-decoration:none;
+}
+.brand span{font-style:italic;font-weight:400;color:var(--green)}
+.navlinks{display:flex;gap:26px;align-items:center}
+.navlinks a{
+  text-decoration:none;color:var(--body);
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  padding:4px 0;border-bottom:1px solid transparent;
+  transition:color .25s,border-color .25s;
+}
+.navlinks a:hover{color:var(--green);border-color:rgba(67,116,90,.4)}
+
+/* ─── Hero ─── */
+.hero{text-align:center;padding:104px 0 84px;border-bottom:1px solid var(--hairline)}
+.eyebrow{
+  font:600 10px var(--mono);letter-spacing:.26em;
+  color:var(--green);text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;gap:14px;
+}
+.eyebrow::before,.eyebrow::after{
+  content:"";width:26px;height:1px;background:var(--green);opacity:.5;
+}
+.hero h1{
+  font-family:var(--serif);font-weight:340;font-variation-settings:"opsz" 144;
+  font-size:clamp(56px,8vw,108px);line-height:1.02;
+  letter-spacing:-.035em;margin:26px 0 26px;
+}
+.hero .lede{
+  max-width:660px;margin:0 auto 26px;
+  font-family:var(--serif);font-weight:380;
+  color:var(--body);font-size:19.5px;line-height:1.7;
+}
+.author{font-size:13px;color:var(--muted);margin-bottom:32px;letter-spacing:.03em}
+.author a{
+  text-decoration:none;color:var(--green);
+  border-bottom:1px solid rgba(67,116,90,.35);padding-bottom:1px;
+  transition:border-color .25s;
+}
+.author a:hover{border-color:var(--green)}
+.links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.pill{
+  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  border:1px solid var(--hairline-strong);padding:11px 20px;border-radius:100px;
+  background:var(--paper);font-weight:550;font-size:12.5px;letter-spacing:.02em;
+  transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s,background .25s,border-color .25s;
+}
+.pill.primary{background:var(--ink);color:#fffdf8;border-color:var(--ink)}
+.pill:hover{
+  transform:translateY(-2px);
+  box-shadow:0 10px 24px -8px rgba(34,30,22,.18);
+  border-color:rgba(34,30,22,.32);
+}
+.pill.primary:hover{background:#171410}
+
+/* ─── Sections ─── */
+section.content{padding:82px 0;border-bottom:1px solid var(--hairline)}
+.section-kicker{
+  color:var(--green);font:600 10px var(--mono);
+  letter-spacing:.26em;text-transform:uppercase;
+  display:flex;align-items:center;gap:14px;
+}
+.section-kicker::before{content:"";width:26px;height:1px;background:var(--green);opacity:.5}
+.section-title{
+  font-family:var(--serif);font-weight:340;
+  font-size:clamp(32px,4vw,48px);line-height:1.1;
+  letter-spacing:-.025em;margin:16px 0 20px;
+}
+.prose{
+  max-width:840px;color:var(--body);margin:0;
+  font-family:var(--serif);font-weight:380;
+  font-size:16px;line-height:1.95;
+}
+.tiny{font-size:12px;color:var(--muted);letter-spacing:.02em}
+
+/* ─── Method ─── */
+.methodgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:36px}
+.methodcard{
+  padding:26px;border:1px solid var(--hairline);
+  background:var(--paper);border-radius:15px;
+  box-shadow:0 1px 2px rgba(34,30,22,.02);
+  transition:transform .3s cubic-bezier(.22,1,.36,1),box-shadow .3s,border-color .3s;
+}
+.methodcard:hover{
+  transform:translateY(-3px);
+  border-color:var(--hairline-strong);
+  box-shadow:0 14px 34px -14px rgba(34,30,22,.14);
+}
+.methodcard small{
+  color:var(--muted);font:600 9.5px var(--mono);letter-spacing:.2em;
+}
+.methodcard h3{
+  font-family:var(--serif);font-weight:480;font-size:19px;
+  letter-spacing:-.01em;margin:12px 0 10px;
+}
+.methodcard p{font-size:13px;line-height:1.8;color:var(--body);margin:0}
+.equation{
+  text-align:center;font-family:var(--serif);font-style:italic;
+  font-size:clamp(22px,3vw,30px);font-weight:400;letter-spacing:.01em;
+  margin:30px 0 14px;padding:28px 22px;
+  background:var(--pale);border:1px solid rgba(67,116,90,.16);
+  border-radius:15px;color:#33593f;
+}
+
+/* ─── Demo (v3 animation components) ─── */
+.surface{
+  background:var(--paper);
+  border:1px solid var(--hairline);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  min-width:0;
+}
+.surface-head{
+  padding:24px 30px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+  border-bottom:1px solid var(--hairline);
+}
+.surface-title{
+  font-family:var(--serif);font-weight:480;font-size:18px;
+  letter-spacing:-.01em;color:var(--ink);
+}
+.surface-sub{font-size:11.5px;color:var(--muted);margin-top:6px;letter-spacing:.01em}
+.surface-index{font:10px var(--mono);letter-spacing:.14em;color:var(--faint);white-space:nowrap}
+
+.prompt{margin:30px 0 26px}
+.prompt-viewport{
+  position:relative;height:150px;
+  background:linear-gradient(180deg,#fffef9,#fcfbf4);
+  overflow:hidden;margin:22px 26px 0;
+  border:1px solid var(--hairline);border-radius:13px;isolation:isolate;
+}
+.prompt-track{
+  position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;
+  width:max-content;transform:translate3d(0,0,0);
+  transition:transform 920ms cubic-bezier(.4,0,.2,1);will-change:transform;
+}
+.prompt-row{display:flex;align-items:center;gap:12px;width:max-content}
+.prompt-token{
+  position:relative;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  min-width:107px;height:54px;padding:0 17px;
+  border:1px solid var(--hairline);border-radius:10px;
+  background:#faf8f1;color:var(--faint);cursor:pointer;
+  transition:background .4s,border-color .4s,box-shadow .4s,color .4s,opacity .4s,transform .4s;
+}
+.prompt-token:hover{border-color:var(--hairline-strong)}
+.prompt-token .number{font:10px var(--mono);letter-spacing:.06em;color:var(--faint)}
+.prompt-token .word{font-family:var(--serif);font-size:15px;font-weight:440;letter-spacing:.01em}
+.prompt-token.past{background:var(--pale);border-color:rgba(67,116,90,.14);color:#6f9176}
+.prompt-token.future{opacity:.5}
+.prompt-token.current{
+  opacity:1;background:var(--paper);color:#33593f;
+  border:1px solid rgba(67,116,90,.5);transform:translateY(-2px);
+  box-shadow:0 0 0 4px rgba(124,171,145,.08),0 10px 26px -6px rgba(52,89,63,.16);
+}
+.prompt-token.current .number{color:var(--green)}
+.spotlight{
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:11px;bottom:11px;width:138px;border-radius:12px;
+  border:1px solid rgba(116,153,128,.14);pointer-events:none;z-index:2;
+}
+.spotlight:after{
+  content:"";position:absolute;left:50%;top:-10px;bottom:-10px;width:1px;
+  background:linear-gradient(transparent,rgba(80,133,99,.3) 25%,rgba(80,133,99,.46) 50%,rgba(80,133,99,.3) 75%,transparent);
+}
+.fade{position:absolute;top:0;bottom:0;width:100px;z-index:3;pointer-events:none}
+.fade.left{left:0;background:linear-gradient(90deg,#fffef9,transparent)}
+.fade.right{right:0;background:linear-gradient(270deg,#fcfbf4,transparent)}
+.prompt-meta{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:18px 18px 24px;color:var(--muted);font-size:11px;letter-spacing:.04em;
+}
+.prompt-meta strong{font-family:var(--serif);font-style:italic;font-weight:480;font-size:14px;color:var(--green)}
+.prompt-meta .separator{color:var(--faint)}
+
+.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}
+.diagram-wrap{
+  padding:18px 10px 16px;overflow-x:auto;
+  scrollbar-width:thin;scrollbar-color:var(--hairline-strong) transparent;
+}
+.diagram{display:block;width:100%;min-width:560px;height:auto}
+svg text{font-family:var(--sans)}
+.svg-heading{font-family:var(--serif);font-size:18px;font-weight:480;letter-spacing:-.01em;fill:var(--ink)}
+.svg-sub{font-size:11px;letter-spacing:.02em;fill:#a39d8f}
+.svg-index{font:10.5px var(--mono);fill:#aba595}
+.svg-label{font-size:11px;letter-spacing:.02em;fill:#948e7f}
+.cpu-zone{fill:#fbf7ee;stroke:#e9dcc9;stroke-width:1}
+.cpu-text{font-size:9.5px;font-weight:600;letter-spacing:.14em;fill:var(--copper)}
+.cpu-note{font-size:10px;fill:#b09a7f}
+.cell{fill:var(--empty);stroke:var(--hairline);stroke-width:1}
+.q-idle{fill:var(--bpal);stroke:#dbe7ee}
+.q-current{fill:var(--blue);stroke:#376b89;stroke-width:1.5}
+.k-old,.v-old{fill:#b7d7c1;stroke:#a4cbb0}
+.k-current,.v-current{fill:#639d76;stroke:#477d58;stroke-width:1.5}
+.att-old{fill:#e6f1e8}
+.att-current{fill:#a8d4b5;stroke:#8abe9a}
+.att-focus{fill:#629e76;stroke:#457d58;stroke-width:1.5}
+.output-old{fill:#dce9ee}
+.output-current{fill:var(--blue);stroke:#376b89;stroke-width:1.5}
+.lookup-old{fill:#f3e9dc;stroke:#e9d9c5}
+.lookup-current{fill:#dcbf9e;stroke:#c9a681}
+.lookup-focus{fill:#b88e61;stroke:#987047;stroke-width:1.5}
+.link{stroke:#bccbbc;stroke-width:1.4;stroke-linecap:round;fill:none}
+.link.blue{stroke:#8cacc0}
+.link.cpu{stroke:#be9c75}
+
+.player{margin-top:26px}
+.player-main{padding:24px 30px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.phase{font:11px var(--mono);letter-spacing:.18em;color:var(--green)}
+.caption{margin-top:8px;color:var(--body);font-size:12.5px;line-height:1.75;max-width:640px}
+.controls{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.controls button{
+  width:40px;height:40px;border:1px solid var(--hairline);border-radius:10px;
+  background:#fbf9f3;color:var(--green);cursor:pointer;font-size:16px;
+  transition:transform .25s cubic-bezier(.22,1,.36,1),background .25s,border-color .25s,box-shadow .25s;
+}
+.controls button:hover:not(:disabled){background:var(--pale);border-color:rgba(67,116,90,.25);transform:translateY(-1px)}
+.controls button:active:not(:disabled){transform:translateY(0)}
+.controls button.play{
+  background:var(--green);border-color:var(--green);color:#fffdf8;
+  width:46px;height:46px;border-radius:50%;
+  box-shadow:0 6px 18px -6px rgba(67,116,90,.5);
+}
+.controls button.play:hover{background:#3a6850;transform:translateY(-1px);box-shadow:0 9px 22px -6px rgba(67,116,90,.55)}
+.controls button:disabled{opacity:.3;cursor:not-allowed}
+.progress{height:3px;background:rgba(34,30,22,.06)}
+.progress div{
+  width:0;height:100%;border-radius:0 2px 2px 0;
+  background:linear-gradient(90deg,#7cab91,var(--green));
+  transition:width .35s cubic-bezier(.22,1,.36,1);
+}
+
+.settings{
+  display:flex;justify-content:center;gap:34px;flex-wrap:wrap;align-items:center;
+  margin:30px 0 24px;color:var(--muted);font-size:11px;letter-spacing:.05em;
+}
+.settings label{display:flex;align-items:center;gap:12px}
+.settings input[type="range"]{
+  -webkit-appearance:none;appearance:none;width:168px;height:2px;border-radius:2px;
+  background:rgba(34,30,22,.14);cursor:pointer;
+}
+.settings input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--paper);border:1.5px solid var(--green);
+  box-shadow:0 1px 4px rgba(34,30,22,.18);transition:transform .2s;
+}
+.settings input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.15)}
+.settings input[type="range"]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:var(--paper);
+  border:1.5px solid var(--green);box-shadow:0 1px 4px rgba(34,30,22,.18);
+}
+#sliderValue{font:11px var(--mono);color:var(--green);min-width:18px}
+.settings select{
+  appearance:none;border:1px solid var(--hairline);border-radius:8px;
+  background:var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23938d7e' stroke-width='1.2'/%3E%3C/svg%3E") no-repeat right 10px center;
+  color:var(--body);padding:8px 30px 8px 12px;cursor:pointer;transition:border-color .25s;
+}
+.settings select:hover{border-color:var(--hairline-strong)}
+
+.legend{
+  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;
+  color:var(--muted);font-size:11px;letter-spacing:.04em;
+}
+.legend span{display:flex;gap:9px;align-items:center}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(34,30,22,.08)}
+
+/* ─── Results ─── */
+.resultgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:28px 0}
+.resultcard{
+  background:var(--paper);border:1px solid var(--hairline);
+  border-radius:15px;padding:26px;
+  box-shadow:0 1px 2px rgba(34,30,22,.02);
+  transition:transform .3s cubic-bezier(.22,1,.36,1),box-shadow .3s,border-color .3s;
+}
+.resultcard:hover{
+  transform:translateY(-3px);
+  border-color:var(--hairline-strong);
+  box-shadow:0 14px 34px -14px rgba(34,30,22,.14);
+}
+.resultcard b{
+  display:block;font-family:var(--serif);font-weight:340;
+  font-size:36px;letter-spacing:-.02em;color:var(--green);
+}
+.resultcard span{display:block;font-size:12px;line-height:1.7;color:var(--body);margin-top:10px}
+.tablewrap{
+  overflow-x:auto;border:1px solid var(--hairline);
+  border-radius:15px;background:var(--paper);
+  box-shadow:0 1px 2px rgba(34,30,22,.02);
+}
+table{border-collapse:collapse;width:100%;min-width:570px;font-size:13px}
+th,td{text-align:left;padding:14px 20px;border-bottom:1px solid var(--hairline)}
+th{
+  background:#f7f3e9;color:var(--body);
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
+}
+td{color:var(--body)}
+td:first-child{font-family:var(--serif);font-size:14px;color:var(--ink)}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background .2s}
+tbody tr:hover{background:rgba(67,116,90,.04)}
+td.good{color:var(--green);font-weight:600}
+
+/* ─── Citation ─── */
+.citation{
+  position:relative;border:1px solid var(--hairline);
+  background:var(--paper);border-radius:15px;padding:26px;overflow:auto;
+  box-shadow:0 1px 2px rgba(34,30,22,.02);
+}
+.citation pre{
+  white-space:pre-wrap;line-height:1.9;
+  font:12.5px var(--mono);margin:0;color:var(--body);
+}
+.copybtn{
+  border:1px solid var(--hairline);border-radius:9px;padding:8px 14px;
+  background:#fbf9f3;font-size:11px;letter-spacing:.06em;float:right;
+  color:var(--body);
+  transition:background .25s,border-color .25s,transform .25s;
+}
+.copybtn:hover{background:var(--pale);border-color:rgba(67,116,90,.25);transform:translateY(-1px)}
+
+/* ─── Footer ─── */
+.foot{
+  display:flex;justify-content:space-between;gap:12px;
+  padding:30px 0 46px;font-size:11px;color:var(--muted);letter-spacing:.05em;
+}
+.foot a{
+  text-decoration:none;border-bottom:1px solid transparent;
+  transition:color .25s,border-color .25s;
+}
+.foot a:hover{color:var(--green);border-color:rgba(67,116,90,.35)}
+
+/* ─── Responsive ─── */
+@media(max-width:1100px){
+  .compare{grid-template-columns:1fr}
+}
+@media(max-width:900px){
+  .methodgrid,.resultgrid{grid-template-columns:1fr}
+  .navlinks{gap:14px}
+}
+@media(max-width:620px){
+  .wrap{padding:0 16px}
+  .navlinks{gap:12px}
+  .navlinks a:nth-child(-n+2){display:none}
+  .hero{padding:70px 0 60px}
+  .hero .lede{font-size:16px}
+  .foot{flex-wrap:wrap}
+  .surface-head{padding:20px}
+  .prompt-viewport{margin:16px 14px 0}
+  .player-main{padding:20px;flex-wrap:wrap}
+  .controls{width:100%;justify-content:flex-end}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+<base target="_blank">
+</head>
+<body>
+<div class="wrap">
+<header class="nav"><a class="brand" href="#top">memory <span>attention.</span></a><nav class="navlinks"><a href="#demo">Demo</a><a href="#method">Method</a><a href="#results">Results</a><a href="#citation">Cite</a><a href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">GitHub ↗</a></nav></header>
+<main id="top">
+<section class="hero"><div class="eyebrow">arXiv:2609.28399 · September 2026 · Research paper</div><h1>Memory Attention</h1><p class="lede">Replacing the value projection with token-indexed memory and contextual keys.</p><div class="author"><a href="https://joluck.github.io/" target="_blank" rel="noopener">Jiale Kang</a></div><div class="links"><a class="pill primary" href="https://arxiv.org/pdf/2609.28399" target="_blank" rel="noopener">↗ Read paper</a><a class="pill" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">⌘ Source code</a><a class="pill" href="#demo">▷ Interactive demo</a><a class="pill" href="#citation">❝ BibTeX</a></div></section>
+<section class="content" id="abstract"><div class="section-kicker">01 / Abstract</div><h2 class="section-title">What if values could be retrieved?</h2><p class="prose">Memory Attention (MA) investigates replacing a dedicated attention value projection with learned token-indexed memory, complemented by context-dependent keys. Each attention layer learns a token memory table; its retrieved representation contributes reusable token-specific information, while the key representation retains contextual information. At inference, row normalization can be folded into the memory table, leaving lookup and addition to construct values. CPU placement and prefetching provide a parameter-storage trade-off. Experiments report improvements in language modeling and average downstream scores under matched training-token budgets, with additional memory parameters.</p><p class="tiny">Summary adapted from the paper's abstract; see the paper for its full text and limitations.</p></section><section class="content" id="demo"><div class="section-kicker">02 / Interactive visualization</div><h2 class="section-title">Attention, token by token.</h2><p class="prose">Follow the input stream and compare standard causal attention with the proposed memory-lookup interpretation. The right-hand lookup triangle represents repeated accesses to historical token IDs, not a physically stored triangular tensor.</p><section class="surface prompt">
+  <div class="surface-head">
+    <div>
+      <div class="surface-title">The sequence</div>
+      <div class="surface-sub">Follow each token as it moves through the model</div>
+    </div>
+    <span class="surface-index">01 — INPUT</span>
+  </div>
+  <div class="prompt-viewport" id="promptViewport">
+    <div class="prompt-track" id="promptTrack">
+      <div class="prompt-row" id="promptRow"></div>
+    </div>
+    <div class="spotlight"></div>
+    <div class="fade left"></div>
+    <div class="fade right"></div>
+  </div>
+  <div class="prompt-meta">
+    <span>Current token</span>
+    <strong id="currentWord">Memory</strong>
+    <span class="separator">/</span>
+    <span id="tokenFraction">01 of 08</span>
+  </div>
+</section>
+
+<div class="compare">
+  <section class="surface">
+    <div class="surface-head">
+      <div>
+        <div class="surface-title">Standard Attention</div>
+        <div class="surface-sub">Keys and values are retained in the GPU cache</div>
+      </div>
+      <span class="surface-index">02</span>
+    </div>
+    <div class="diagram-wrap">
+      <svg id="standard" class="diagram" viewBox="0 0 650 635" role="img" aria-label="Standard attention"></svg>
+    </div>
+  </section>
+  <section class="surface">
+    <div class="surface-head">
+      <div>
+        <div class="surface-title">Memory Attention</div>
+        <div class="surface-sub">Cached keys · CPU memory lookup · Reconstructed values</div>
+      </div>
+      <span class="surface-index">03</span>
+    </div>
+    <div class="diagram-wrap">
+      <svg id="memory" class="diagram" viewBox="0 0 650 635" role="img" aria-label="Memory attention and CPU memory lookup"></svg>
+    </div>
+  </section>
+</div>
+
+<section class="surface player">
+  <div class="player-main">
+    <div>
+      <div id="phase" class="phase">TOKEN 01 / 08</div>
+      <div id="caption" class="caption"></div>
+    </div>
+    <div class="controls">
+      <button id="prev" aria-label="Previous token">←</button>
+      <button id="next" aria-label="Next token">→</button>
+      <button class="play" id="play" aria-label="Play or pause">▶</button>
+      <button id="reset" aria-label="Reset">↺</button>
+    </div>
+  </div>
+  <div class="progress"><div id="progressBar"></div></div>
+</section>
+
+<div class="settings">
+  <label>
+    Token position
+    <input type="range" id="slider" min="1" max="8" step="1" value="1">
+    <span id="sliderValue">01</span>
+  </label>
+  <label>
+    Playback
+    <select id="speed">
+      <option value="1600">Normal</option>
+      <option value="950">Fast</option>
+      <option value="2800">Slow</option>
+    </select>
+  </label>
+</div>
+
+<div class="legend">
+  <span><i class="swatch" style="background:#477493"></i>Current query</span>
+  <span><i class="swatch" style="background:#a8d4b5"></i>Active attention</span>
+  <span><i class="swatch" style="background:#e6f1e8"></i>Previous positions</span>
+  <span><i class="swatch" style="background:#dcbf9e"></i>CPU lookup</span>
+  <span><i class="swatch" style="background:#f4f1ea"></i>Inactive</span>
+</div>
+<p class="researchmeta">Conceptual animation only. In actual MA, attention values use pre-RoPE content keys. MA-Recall requires preserving or recovering the correct key representation, with additional retrieval and positional-transform costs.</p></section>
+
+<section class="content" id="method"><div class="section-kicker">03 / Method</div><h2 class="section-title">Memory instead of a value projection.</h2><p class="prose">Standard attention produces values with a learned dense projection. MA combines a pre-normalization content key with memory retrieved using the original token ID. Normalized rows may be precomputed for inference. The contextual key used to form values is distinct from the RoPE-transformed key used in attention scoring.</p><div class="equation">V = K<sub>content</sub> + M̄[token IDs]</div><div class="methodgrid"><div class="methodcard"><small>01 / VALUE</small><h3>Memory-based construction</h3><p>Eliminates the independent V projection, using a layer-specific table and contextual keys instead.</p></div><div class="methodcard"><small>02 / OFFLOAD · EVALUATED</small><h3>CPU memory, GPU compute</h3><p>The token-indexed table may reside on CPU. Prefetching overlaps required lookups and transfers with computation while a conventional KV cache remains in use.</p></div><div class="methodcard"><small>03 / RECALL · PROPOSED</small><h3>Reconstruct historical values</h3><p>Retain sufficient K information and token IDs, then rebuild V on demand. This extension was not included in the paper's inference benchmarks.</p></div></div></section>
+<section class="content" id="results"><div class="section-kicker">04 / Results</div><h2 class="section-title">Quality and efficiency in the reported settings.</h2><p class="prose">The following values are from the paper's experimental tables. MA models have additional learned memory parameters; the comparisons match training-token budgets, not parameter counts.</p><div class="resultgrid"><div class="resultcard"><b>41.39</b><span>MHA + MA average downstream score, vs 40.68 Standard (1024 hidden, 10B tokens).</span></div><div class="resultcard"><b>7.38%</b><span>Less GPU parameter storage for MA-Offload vs Standard in the reference inference setup; excludes KV cache and buffers.</span></div><div class="resultcard"><b>17.189 ms</b><span>MA-Offload decode forward-pass latency vs 17.636 ms Standard at batch 8, 2K context; not a universal speed claim.</span></div></div><div class="tablewrap"><table><thead><tr><th>Configuration (10B tokens)</th><th>Standard Avg. ↑</th><th>MA Avg. ↑</th><th>Difference</th></tr></thead><tbody><tr><td>MHA · 1024 hidden</td><td>40.68</td><td class="good">41.39</td><td>+0.71</td></tr><tr><td>GQA · 1024 hidden</td><td>40.90</td><td class="good">41.51</td><td>+0.61</td></tr><tr><td>MQA · 1024 hidden</td><td>41.11</td><td class="good">41.34</td><td>+0.23</td></tr><tr><td>Gated · 1024 hidden</td><td>41.40</td><td class="good">42.88</td><td>+1.48</td></tr></tbody></table></div><p class="tiny">Source: paper language-modeling results table and Table 4 (inference). Average is the unweighted mean of seven accuracy-based evaluations. MA-Recall is not part of the reported inference measurements.</p><p><a class="pill" href="https://arxiv.org/html/2609.28399v1#S4" target="_blank" rel="noopener">Explore all experiments ↗</a></p></section>
+<section class="content" id="code"><div class="section-kicker">05 / Implementation</div><h2 class="section-title">Built on Flash Linear Attention.</h2><p class="prose">The public implementation exposes an MA layer and a Hugging Face-style causal language model. CPU-offload comparisons are currently in standalone profiling scripts; the repository README does not describe them as integrated into the primary causal LM implementation.</p><div class="methodgrid"><div class="methodcard"><small>CORE LAYER</small><h3>fla/layers/memory_attn.py</h3><p>Key projections, layer-specific token-indexed memory and value construction.</p></div><div class="methodcard"><small>MODEL</small><h3>fla/models/memory/</h3><p>Backbone configuration and causal language model interface.</p></div><div class="methodcard"><small>PROFILING</small><h3>profile/</h3><p>Reference inference experiments and CPU-offloading traces.</p></div></div><p style="margin-top:20px"><a class="pill" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">View repository ↗</a></p></section>
+<section class="content" id="citation"><div class="section-kicker">06 / Citation</div><h2 class="section-title">Cite this work.</h2><div class="citation"><button class="copybtn" id="copy">Copy BibTeX</button><pre id="bib">@misc{kang2026memoryattention,
+  title={Memory Attention},
+  author={Jiale Kang},
+  year={2026},
+  eprint={2609.28399},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG},
+  url={https://arxiv.org/abs/2609.28399}
+}</pre></div></section>
+</main><footer class="foot"><span>© 2026 · Memory Attention · Jiale Kang</span><span><a href="https://arxiv.org/abs/2609.28399">Paper</a> · <a href="https://github.com/Joluck/memory-attention">Code</a></span></footer>
+</div>
+<script>
+"use strict";
+
+const NS="http://www.w3.org/2000/svg";
+const $=id=>document.getElementById(id);
+
+const promptTokens=[
+  "Memory","attention","retrieves","historical","token","IDs","from","CPU"
+];
+
+const N=promptTokens.length;
+const C=32;
+const GAP=3;
+const STEP=C+GAP;
+
+let token=1;
+let playing=false;
+let timer=null;
+let promptReady=false;
+let resizeObserver=null;
+
+const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* SVG helpers */
+
+function create(tag,attributes={},content){
+  const element=document.createElementNS(NS,tag);
+  for(const [key,value] of Object.entries(attributes)){
+    element.setAttribute(key,String(value));
+  }
+  if(content!==undefined)element.textContent=content;
+  return element;
+}
+
+function add(parent,tag,attributes={},content){
+  const element=create(tag,attributes,content);
+  parent.appendChild(element);
+  return element;
+}
+
+function square(p,x,y,w,h,cls,rx=2){
+  return add(p,"rect",{x,y,width:w,height:h,rx,class:cls});
+}
+
+function label(p,x,y,value,cls="svg-index",anchor="start"){
+  return add(p,"text",{x,y,class:cls,"text-anchor":anchor},value);
+}
+
+function installMarkers(p,id){
+  const defs=add(p,"defs");
+
+  for(const [name,color] of [
+    ["blue","#8cacc0"],
+    ["green","#a5c0a9"],
+    ["copper","#be9c75"]
+  ]){
+    const marker=add(defs,"marker",{
+      id:`${id}-${name}`,
+      viewBox:"0 0 10 10",
+      refX:9,refY:5,
+      markerWidth:5,markerHeight:5,
+      orient:"auto"
+    });
+
+    add(marker,"path",{d:"M0 0 L10 5 L0 10Z",fill:color});
+  }
+}
+
+/* Rolling prompt */
+
+function initializePrompt(){
+  if(promptReady)return;
+
+  const row=$("promptRow");
+
+  promptTokens.forEach((word,index)=>{
+    const chip=document.createElement("button");
+    chip.type="button";
+    chip.className="prompt-token future";
+
+    const number=document.createElement("span");
+    number.className="number";
+    number.textContent=String(index+1).padStart(2,"0");
+
+    const wordNode=document.createElement("span");
+    wordNode.className="word";
+    wordNode.textContent=word;
+
+    chip.append(number,wordNode);
+
+    chip.addEventListener("click",()=>{
+      pause();
+      token=index+1;
+      render();
+    });
+
+    row.append(chip);
+  });
+
+  promptReady=true;
+
+  const viewport=$("promptViewport");
+
+  if("ResizeObserver" in window){
+    resizeObserver=new ResizeObserver(()=>{alignPrompt(true);});
+    resizeObserver.observe(viewport);
+  }else{
+    window.addEventListener("resize",()=>{alignPrompt(true);});
+  }
+}
+
+function alignPrompt(immediate=false){
+  const track=$("promptTrack");
+  const viewport=$("promptViewport");
+  const current=$("promptRow").children[token-1];
+
+  if(!current)return;
+
+  const center=current.offsetLeft+current.offsetWidth/2;
+  const destination=viewport.clientWidth/2-center;
+
+  if(immediate){
+    track.style.transition="none";
+    track.style.transform=`translate3d(${destination}px,0,0)`;
+
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{track.style.transition="";});
+    });
+  }else{
+    track.style.transform=`translate3d(${destination}px,0,0)`;
+  }
+}
+
+function updatePrompt(){
+  initializePrompt();
+
+  Array.from($("promptRow").children).forEach((chip,index)=>{
+    chip.classList.toggle("past",index<token-1);
+    chip.classList.toggle("current",index===token-1);
+    chip.classList.toggle("future",index>token-1);
+
+    chip.setAttribute("aria-current",index===token-1?"step":"false");
+  });
+
+  $("currentWord").textContent=promptTokens[token-1];
+  $("tokenFraction").textContent=
+    `${String(token).padStart(2,"0")} of ${String(N).padStart(2,"0")}`;
+
+  alignPrompt();
+}
+
+/* Matrix visualization */
+
+function drawPanel(id,isMemory){
+  const p=$(id);
+  p.replaceChildren();
+  installMarkers(p,id);
+
+  const qX=42,qY=178;
+  const aX=155,aY=178;
+  const kX=aX,kY=91;
+  const outX=aX,outY=525;
+  const vX=478,vY=178;
+  const dimension=N*STEP-GAP;
+
+  function edge(d,style="green"){
+    add(p,"path",{
+      d,
+      class:"link "+(style==="copper"?"cpu":style==="blue"?"blue":""),
+      "marker-end":`url(#${id}-${style})`
+    });
+  }
+
+  if(isMemory){
+    square(p,454,119,187,395,"cpu-zone",12);
+    label(p,469,141,"CPU / MEMORY LOOKUP","cpu-text");
+    label(p,469,157,"CPU resident · M[IDs]","svg-sub");
+  }
+
+  label(p,qX,qY-25,"Q","svg-heading");
+  label(p,kX,kY-44,"K","svg-heading");
+  label(p,kX,kY-30,"GPU cache","svg-sub");
+  label(p,outX-100,outY+23,"Output","svg-heading");
+
+  if(!isMemory){
+    label(p,vX,vY-25,"V","svg-heading");
+    label(p,vX,vY-11,"GPU cache","svg-sub");
+  }else{
+    label(p,469,186,"Memory lookup","svg-heading");
+    label(p,469,201,"Historical prefix","svg-sub");
+  }
+
+  // Query
+  for(let i=0;i<N;i++){
+    const y=qY+i*STEP;
+    square(p,qX,y,C,C,"cell"+(i===token-1?" q-current":""));
+    label(p,qX-12,y+21,i+1,"svg-index","end");
+  }
+
+  // Cached keys
+  for(let j=0;j<N;j++){
+    const x=kX+j*STEP;
+    const cls=j===token-1?"k-current":j<token-1?"k-old":"";
+    square(p,x,kY,C,C,"cell "+cls);
+    label(p,x+C/2,kY-12,j+1,"svg-index","middle");
+  }
+
+  // Attention matrix
+  for(let i=0;i<N;i++){
+    for(let j=0;j<N;j++){
+      let cls="";
+      if(i<token-1 && j<=i)cls="att-old";
+      if(i===token-1 && j<token)cls="att-current";
+      if(i===token-1 && j===token-1)cls="att-focus";
+      square(p,aX+j*STEP,aY+i*STEP,C,C,"cell "+cls);
+    }
+  }
+
+  if(!isMemory){
+    for(let i=0;i<N;i++){
+      let cls="";
+      if(i<token-1)cls="v-old";
+      if(i===token-1)cls="v-current";
+      square(p,vX,vY+i*STEP,C,C,"cell "+cls);
+      label(p,vX+C+10,vY+i*STEP+21,i+1,"svg-index");
+    }
+  }else{
+    const lx=469,ly=225;
+    const small=17;
+    const space=3;
+    const step=small+space;
+
+    for(let j=0;j<N;j++){
+      label(p,lx+j*step+small/2,ly-9,j+1,"svg-index","middle");
+    }
+
+    for(let i=0;i<N;i++){
+      for(let j=0;j<N;j++){
+        let cls="";
+        if(i<token-1 && j<=i)cls="lookup-old";
+        if(i===token-1 && j<token)cls="lookup-current";
+        if(i===token-1 && j===token-1)cls="lookup-focus";
+        square(p,lx+j*step,ly+i*step,small,small,"cell "+cls,2);
+      }
+      label(p,lx-9,ly+i*step+13,i+1,"svg-index","end");
+    }
+
+    label(p,469,410,`Step ${token} · M[IDs₁…${token}]`,"cpu-note");
+    label(p,469,431,"Repeated history lookup","cpu-note");
+    label(p,469,450,"CPU → H2D → temporary V","cpu-note");
+  }
+
+  // Output
+  for(let j=0;j<N;j++){
+    let cls="";
+    if(j<token-1)cls="output-old";
+    if(j===token-1)cls="output-current";
+    square(p,outX+j*STEP,outY,C,C,"cell "+cls);
+    label(p,outX+j*STEP+C/2,outY+48,j+1,"svg-index","middle");
+  }
+
+  // Connections
+  const qCenter=qY+(token-1)*STEP+C/2;
+  const kCenter=kX+(token-1)*STEP+C/2;
+  const outCenter=outX+(token-1)*STEP+C/2;
+
+  edge(`M${qX+C+9} ${qCenter} H${aX-10}`,"blue");
+  edge(`M${kCenter} ${kY+C+7} V${aY-10}`);
+  edge(`M${outCenter} ${aY+dimension+9} V${outY-10}`);
+
+  if(!isMemory){
+    const vCenter=vY+(token-1)*STEP+C/2;
+    edge(`M${vX-8} ${vCenter} H${aX+dimension+9}`);
+  }else{
+    const lookupCenter=225+(token-1)*20+8.5;
+    edge(`M${454} ${lookupCenter} H${aX+dimension+9}`,"copper");
+  }
+
+  label(p,aX+dimension/2,493,"Attention scores · causal mask","svg-label","middle");
+  label(p,aX+dimension/2,614,
+    isMemory?"Values are reconstructed for each step":"Keys and values remain cached",
+    "svg-label","middle");
+}
+
+/* Playback */
+
+function render(){
+  updatePrompt();
+  drawPanel("standard",false);
+  drawPanel("memory",true);
+
+  $("phase").textContent=
+    `TOKEN ${String(token).padStart(2,"0")} / ${String(N).padStart(2,"0")}`;
+
+  $("caption").textContent=
+    `“${promptTokens[token-1]}” · Query ${token} attends to `+
+    `positions 1–${token}. Memory Attention retrieves `+
+    `the corresponding memory prefix again from CPU.`;
+
+  $("slider").value=token;
+  $("sliderValue").textContent=String(token).padStart(2,"0");
+
+  $("play").textContent=playing?"Ⅱ":"▶";
+  $("play").setAttribute("aria-label",playing?"Pause":"Play");
+
+  $("prev").disabled=token===1;
+  $("next").disabled=token===N;
+
+  $("progressBar").style.width=`${token/N*100}%`;
+}
+
+function pause(){
+  if(timer!==null)clearTimeout(timer);
+  timer=null;
+  playing=false;
+  render();
+}
+
+function forward(){token=Math.min(N,token+1);render();}
+function backward(){token=Math.max(1,token-1);render();}
+
+function reset(){pause();token=1;render();}
+
+function schedule(){
+  if(!playing)return;
+  timer=setTimeout(()=>{
+    token=token===N?1:token+1;
+    render();
+    schedule();
+  },Number($("speed").value));
+}
+
+function toggle(){
+  if(playing){pause();return;}
+  playing=true;
+  render();
+  schedule();
+}
+
+$("prev").onclick=()=>{pause();backward();};
+$("next").onclick=()=>{pause();forward();};
+$("play").onclick=toggle;
+$("reset").onclick=reset;
+
+$("slider").oninput=e=>{
+  pause();
+  token=Number(e.target.value);
+  render();
+};
+
+$("speed").onchange=()=>{if(playing){pause();toggle();}};
+
+$("copy").onclick=async()=>{
+  try{
+    await navigator.clipboard.writeText($("bib").textContent);
+    $("copy").textContent="Copied";
+    setTimeout(()=>$("copy").textContent="Copy BibTeX",1400);
+  }catch{
+    $("copy").textContent="Select text to copy";
+  }
+};
+
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden&&playing)pause();
+});
+
+document.addEventListener("keydown",e=>{
+  const active=document.activeElement?.tagName;
+  if(["INPUT","SELECT","TEXTAREA","BUTTON"].includes(active))return;
+
+  if(e.code==="Space"){e.preventDefault();toggle();}
+  else if(e.code==="ArrowRight"){pause();forward();}
+  else if(e.code==="ArrowLeft"){pause();backward();}
+});
+
+// Initialize the prompt without an initial sliding transition.
+initializePrompt();
+
+const track=$("promptTrack");
+track.style.transition="none";
+render();
+
+requestAnimationFrame(()=>{
+  requestAnimationFrame(()=>{
+    track.style.transition="";
+    if(!reduced)toggle();
+  });
+});
+</script></body></html>
