@@ -203,7 +203,7 @@ h1 .stop{color:var(--verm);font-style:normal}
 .sec-head .lab{grid-column:1;font:400 11.5px/1.5 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding-top:.55em}
 .sec-head .lab b{display:block;font-weight:500;color:var(--verm)}
 .sec-head h2{
-  grid-column:2;margin:0;font:400 clamp(42px,5.4vw,80px)/.98 var(--display);letter-spacing:-.025em;max-width:15ch;text-wrap:balance;
+  grid-column:2;margin:0;font:400 clamp(42px,5.4vw,80px)/.98 var(--display);letter-spacing:-.025em;max-width:26ch;text-wrap:balance;
 }
 .sec-head h2 em{font-style:italic}
 #h-code{max-width:none;font-size:clamp(34px,4.4vw,68px);white-space:nowrap}
@@ -781,10 +781,11 @@ kbd{font:inherit;border:1px solid var(--rule-2);border-bottom-width:2px;border-r
         <thead><tr><th>Configuration</th><th class="r">Params.</th><th class="r">LAMBADA PPL ↓</th><th class="r">WikiText PPL ↓</th><th class="r">Avg. ↑</th></tr></thead>
         <tbody>
           <tr><td><span class="math">V = K + E[i]</span></td><td class="r">526M</td><td class="r">54.46</td><td class="r">32.60</td><td class="r">40.85</td></tr>
+          <tr><td><span class="math">V = K<sup>RoPE</sup> + Norm(E[i])</span></td><td class="r">526M</td><td class="r">51.38</td><td class="r">30.79</td><td class="r">40.61</td></tr>
           <tr class="ma"><td><span class="math">V = K + Norm(E[i])</span></td><td class="r">526M</td><td class="r b">45.93</td><td class="r b">29.82</td><td class="r b">41.38</td></tr>
         </tbody>
       </table></div>
-      <p class="abl-n">Controlling the scale of memory embeddings balances the key and memory contributions, improving both language modeling and downstream accuracy.</p>
+      <p class="abl-n">Controlling the scale of memory embeddings balances the key and memory contributions, improving both language modeling and downstream accuracy. Sharing the RoPE-transformed key (<span class="math">V = K<sup>RoPE</sup> + Norm(E[i])</span>) lowers the average to 40.61 — positional encoding must stay out of the shared value path.</p>
     </article>
 
     <article class="abl" data-r style="--d:1">
