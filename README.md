@@ -29,7 +29,7 @@ See the [Flash Linear Attention repository](https://github.com/fla-org/flash-lin
 
 ## Performance Profiling
 
-The [`profile/`](profile/) directory contains standalone inference experiments comparing standard attention (`standard`), GPU-resident memory tables (`ma_gpu`), and CPU-offloaded memory tables (`ma_offload`). The offloading implementation belongs to the benchmark and is not integrated into `MemoryForCausalLM`.
+The [`profile/`](profile/) directory contains standalone inference experiments comparing standard attention (`standard`), GPU-resident memory tables (`ma_gpu`), and CPU-offloaded memory tables (`ma_offload`). `MemoryForCausalLM` also supports inference-only CPU table offload; see below.
 
 Run the prefill and decode benchmark with the default configuration and save the results:
 
@@ -66,3 +66,23 @@ legacy/training/          Legacy training code and examples
 This project builds on Flash Linear Attention and retains its modules, operators, and source attribution. See [`CITATION.cff`](CITATION.cff) for upstream citation information.
 
 The repository's [`LICENSE`](LICENSE) contains Apache License 2.0, while some license metadata in `pyproject.toml` and `setup.py` still specifies MIT. These declarations have not yet been reconciled.
+
+## Model memory-table offload
+
+Memory Attention supports BF16 inference with CPU-resident memory tables on CUDA.
+Start with an evaluated CUDA model; offload folds table normalization and streams
+lookups through pinned host memory. Disable offload before saving a checkpoint; training with offload is unsupported.
+
+```python
+model.eval()
+with torch.inference_mode():
+    model.enable_memory_offload()
+    outputs = model(input_ids=input_ids, use_cache=True)
+model.close_memory_offload()
+```
+
+Correctness tests require CUDA and FlashAttention:
+
+```sh
+python -m pytest tests/models/test_memory_offload.py -q
+```

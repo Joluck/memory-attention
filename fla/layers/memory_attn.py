@@ -1,21 +1,25 @@
-# Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
+# Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+# For a list of all contributors, visit:
+#   https://github.com/fla-org/flash-linear-attention/graphs/contributors
+
 
 from __future__ import annotations
 
 import warnings
 from typing import TYPE_CHECKING
 
-from sympy import O
 import torch
 import torch.nn as nn
 from einops import rearrange
 from transformers.utils import logging
 
+from fla.layers.memory_offload import PendingM
 from fla.layers.utils import pad_input, unpad_input
 from fla.modules import RMSNorm, RotaryEmbedding
 from fla.ops.utils.index import prepare_lens_from_mask
-
-import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from fla.models.utils import Cache
@@ -30,8 +34,6 @@ except ImportError:
     flash_attn_func = None
 
 logger = logging.get_logger(__name__)
-
-
 
 
 class MemoryAttention(nn.Module):
@@ -50,6 +52,7 @@ class MemoryAttention(nn.Module):
         use_gate: bool = False,
         use_head_gate: bool = False,
         vocab_size: int | None = None,
+        memory_table_folded: bool = False,
     ):
         super().__init__()
 
@@ -73,10 +76,12 @@ class MemoryAttention(nn.Module):
         if flash_attn_func is None:
             raise ImportError("Please install Flash Attention via `pip install flash-attn --no-build-isolation` first")
 
-
         self.use_gate = use_gate
         self.use_head_gate = use_head_gate
         self.v_dim = self.head_dim
+        # When True, the supplied table already includes the head-wise m_norm,
+        # so forward() skips the per-token norm. Set when the table is folded.
+        self.memory_table_folded = memory_table_folded
 
         self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
         self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
@@ -84,8 +89,6 @@ class MemoryAttention(nn.Module):
 
         self.m_proj = nn.Embedding(vocab_size, self.kv_dim)
         self.m_norm = RMSNorm(self.head_dim, dtype=torch.float32)
-
-
 
         if self.qk_norm:
             self.q_norm = RMSNorm(self.head_dim, dtype=torch.float32)
@@ -96,7 +99,6 @@ class MemoryAttention(nn.Module):
         if self.use_head_gate:
             self.head_gate = nn.Linear(self.hidden_size, self.num_heads, bias=self.qkv_bias)
 
-
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -105,6 +107,7 @@ class MemoryAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         input_ids: torch.LongTensor | None = None,
+        memory_table: torch.Tensor | PendingM | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         if attention_mask is not None:
@@ -116,13 +119,36 @@ class MemoryAttention(nn.Module):
 
         batch_size, q_len, _ = hidden_states.size()
 
-        q,k,m = self.q_proj(hidden_states), self.k_proj(hidden_states), self.m_proj(input_ids)
+        q, k = self.q_proj(hidden_states), self.k_proj(hidden_states)
         q = rearrange(q, '... (h d) -> ... h d', d=self.head_dim)
         k = rearrange(k, '... (h d) -> ... h d', d=self.head_dim)
+
+        # `memory_table` is the offload path: a [batch, q_len, kv_dim] tensor
+        # whose rows already include the head-wise RMSNorm, or a PendingM handle
+        # that resolves to one. It lets the CPU->GPU transfer overlap the Q/K
+        # kernels instead of serializing before them.
+        pending_m = memory_table if isinstance(memory_table, PendingM) else None
+        if pending_m is not None:
+            m = pending_m.acquire()
+        elif memory_table is not None:
+            m = memory_table
+        else:
+            if input_ids is None:
+                raise ValueError("MemoryAttention requires either input_ids or memory_table")
+            m = self.m_proj(input_ids)
+
         m = rearrange(m, '... (h d) -> ... h d', d=self.head_dim)
 
-        v = k+self.m_norm(m)
+        if self.memory_table_folded:
+            # Table already carries m_norm, so skip the per-token norm.
+            v = k + m
+        else:
+            v = k + self.m_norm(m)
 
+        if pending_m is not None:
+            # Safe to hand the buffer back: the copy already happened before
+            # this point, and the only consumer is the k + m kernel above.
+            pending_m.release()
 
         if self.qk_norm:
             q, k = self.q_norm(q), self.k_norm(k)
@@ -158,7 +184,6 @@ class MemoryAttention(nn.Module):
                 v = rearrange(v, '... (h d) -> ... h d', d=self.head_dim)
 
         # Contains at least one padding token in the sequence
- 
 
         if attention_mask is not None:
             if q.shape[1] == 1 and self.window_size is not None:
@@ -195,18 +220,20 @@ class MemoryAttention(nn.Module):
                 window_size=(-1, -1) if self.window_size is None else (self.window_size-1, 0),
             )
 
-
-
         o = o.reshape(batch_size, q_len, -1)
-
 
         if self.use_gate:
             gate = torch.sigmoid(self.gate(hidden_states))
             o = gate*o
         o = self.o_proj(o)
 
-        if not output_attentions:
-            attentions = None
+        # FlashAttention does not expose the attention matrix, so this path
+        # never has weights to return. Fail loudly instead of leaking an
+        # unbound name or silently handing back None.
+        if output_attentions:
+            raise NotImplementedError(
+                "MemoryAttention uses FlashAttention, which does not return attention weights"
+            )
+        attentions = None
 
         return o, attentions, past_key_values
-    
