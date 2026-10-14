@@ -1,1010 +1,1163 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Memory Attention: token-indexed memory and contextual keys for language model attention. Paper, code, results, and interactive demo.">
-<meta name="theme-color" content="#faf7ef"><title>Memory Attention — Jiale Kang</title>
+<meta name="theme-color" content="#f8f5ee">
+<title>Memory Attention — Jiale Kang</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..600&family=Geist:wght@300..600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add("js")</script>
 <style>
+/* ───────────────────────── Tokens ───────────────────────── */
 :root{
-  --bg:#faf7ef;
-  --paper:#fffdf8;
-  --ink:#221e16;
-  --body:#544e41;
-  --muted:#938d7e;
-  --faint:#b6b0a2;
-  --hairline:rgba(34,30,22,.10);
-  --hairline-strong:rgba(34,30,22,.18);
+  --paper:oklch(97.4% .008 85);
+  --paper-2:oklch(95.1% .011 83);
+  --paper-3:oklch(91.8% .013 80);
+  --ink:oklch(20.5% .014 65);
+  --ink-2:oklch(35% .013 65);
+  --ink-3:oklch(51% .011 70);
+  --ink-4:oklch(68% .009 75);
+  --ink-5:oklch(84% .009 80);
+  --rule:oklch(20.5% .014 65 / .11);
+  --rule-2:oklch(20.5% .014 65 / .22);
 
-  --green:#43745a;
-  --pale:#e8f1e9;
-  --blue:#477493;
-  --bpal:#e9f1f5;
-  --copper:#9b6b40;
-  --cpale:#f6eee2;
-  --empty:#f4f1ea;
-  --shadow:0 1px 2px rgba(34,30,22,.025),0 16px 48px -14px rgba(34,30,22,.09);
+  /* spot colour 1 — query & attention */
+  --cobalt:oklch(47% .165 263);
+  --cobalt-2:oklch(63% .12 263);
+  --cobalt-3:oklch(83% .06 263);
+  --cobalt-4:oklch(93.5% .022 263);
+  /* spot colour 2 — token-indexed memory */
+  --verm:oklch(61% .19 36);
+  --verm-2:oklch(72% .13 40);
+  --verm-3:oklch(85% .065 45);
+  --verm-4:oklch(94.5% .022 55);
+  /* current-state green */
+  --green:oklch(51% .115 164);
+  --green-2:oklch(67% .085 164);
+  --green-3:oklch(83% .042 164);
+  --green-4:oklch(93.5% .016 164);
 
-  --serif:"Fraunces",Georgia,"Times New Roman",serif;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
-  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --display:"Instrument Serif","Iowan Old Style",Georgia,serif;
+  --serif:"Newsreader","Iowan Old Style",Georgia,serif;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --ease:cubic-bezier(.16,1,.3,1);
+  --max:1320px;
+  --pad:clamp(20px,4vw,56px);
+  --margin:clamp(132px,13vw,196px);
+  --gutter:clamp(24px,4vw,64px);
 }
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px;-webkit-text-size-adjust:100%}
 body{
-  margin:0;
-  background:var(--bg);
-  color:var(--ink);
-  font:15px/1.75 var(--sans);
-  -webkit-font-smoothing:antialiased;
+  margin:0;background:var(--paper);color:var(--ink);
+  font:400 16px/1.6 var(--sans);
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
   text-rendering:optimizeLegibility;
 }
-body::after{
-  content:"";
-  position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.05;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size:300px 300px;
+body::after{ /* paper grain */
+  content:"";position:fixed;inset:0;z-index:100;pointer-events:none;opacity:.045;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-::selection{background:#cfe2d3;color:var(--ink)}
+::selection{background:var(--verm-3);color:var(--ink)}
 a{color:inherit}
-button,input,select{font:inherit}
-button{cursor:pointer}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{
-  outline:1.5px solid var(--green);outline-offset:3px;border-radius:4px;
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:1.5px solid var(--cobalt);outline-offset:3px;border-radius:3px}
+.mono{font-family:var(--mono)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ───────────────────────── Top bar ───────────────────────── */
+.top{
+  position:sticky;top:0;z-index:50;
+  background:color-mix(in oklch,var(--paper) 86%,transparent);
+  -webkit-backdrop-filter:saturate(1.3) blur(12px);backdrop-filter:saturate(1.3) blur(12px);
+  border-bottom:1px solid transparent;transition:border-color .4s;
+}
+.top.scrolled{border-bottom-color:var(--rule)}
+.top-in{max-width:var(--max);margin:auto;padding:0 var(--pad);height:60px;display:flex;align-items:center;gap:28px}
+.brand{display:inline-flex;align-items:center;gap:12px;text-decoration:none;font:500 14px var(--sans);letter-spacing:-.01em;white-space:nowrap}
+.glyph{display:grid;grid-template-columns:repeat(3,5px);gap:2px}
+.glyph i{width:5px;height:5px;background:var(--ink);opacity:.16;transition:opacity .4s,background .4s}
+.glyph i:nth-child(6){background:var(--verm);opacity:1}
+.brand:hover .glyph i:nth-child(6){background:var(--ink);opacity:.16}
+.brand:hover .glyph i:nth-child(2){background:var(--verm);opacity:1}
+.nav{margin-left:auto;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  text-decoration:none;font:450 13px var(--sans);color:var(--ink-3);
+  padding:6px 11px;border-radius:999px;white-space:nowrap;transition:color .25s,background .25s;
+}
+.nav a .n{font:400 10px var(--mono);color:var(--ink-4);margin-right:6px;transition:color .25s}
+.nav a:hover{color:var(--ink);background:var(--paper-2)}
+.nav a.active{color:var(--ink)}
+.nav a.active .n{color:var(--verm)}
+.top .cta{
+  text-decoration:none;font:500 13px var(--sans);padding:7px 14px;border-radius:999px;
+  background:var(--ink);color:var(--paper);white-space:nowrap;transition:background .25s;
+}
+.top .cta:hover{background:var(--cobalt)}
+.readline{position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--verm);transform-origin:0 50%;transform:scaleX(0)}
+@supports (animation-timeline:scroll()){
+  .readline{animation:read linear both;animation-timeline:scroll(root)}
+  @keyframes read{to{transform:scaleX(1)}}
 }
 
-.wrap{max-width:1190px;margin:auto;padding:0 30px}
+/* ───────────────────────── Hero ───────────────────────── */
+.hero{
+  max-width:var(--max);margin:auto;
+  padding:clamp(56px,8vw,120px) var(--pad) clamp(64px,8vw,112px);
+  display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr);
+  gap:clamp(40px,6vw,96px);align-items:end;
+}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;font:400 11.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.meta .live{display:inline-flex;align-items:center;gap:8px;color:var(--ink)}
+.meta .live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--verm)}
+h1{
+  font-family:var(--display);font-weight:400;
+  font-size:clamp(68px,10.4vw,164px);line-height:.88;letter-spacing:-.032em;
+  margin:clamp(24px,3vw,40px) 0 0;
+}
+h1 .line{display:block;overflow:hidden;padding-bottom:.09em;margin-bottom:-.09em}
+h1 .line > span{display:block}
+h1 em{font-style:italic;letter-spacing:-.02em}
+h1 .stop{color:var(--verm);font-style:normal}
+.lede{
+  font:380 clamp(20px,1.85vw,26px)/1.36 var(--serif);
+  color:var(--ink-2);max-width:27ch;margin:clamp(28px,3vw,40px) 0 0;letter-spacing:-.005em;
+}
+.byline{margin:22px 0 0;font:400 14px var(--sans);color:var(--ink-3)}
+.byline a{color:var(--ink);text-decoration:none;background:linear-gradient(var(--ink),var(--ink)) 0 100%/100% 1px no-repeat;padding-bottom:2px;transition:background-size .4s var(--ease)}
+.byline a:hover{background-size:0 1px;background-position:100% 100%}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 26px;margin-top:clamp(32px,3.4vw,44px)}
+.btn{
+  display:inline-flex;align-items:center;gap:12px;text-decoration:none;
+  font:500 14.5px var(--sans);letter-spacing:-.005em;
+  background:var(--ink);color:var(--paper);padding:14px 20px 14px 22px;border-radius:3px;
+  transition:background .3s,transform .4s var(--ease);
+}
+.btn .arr{display:inline-block;transition:transform .4s var(--ease)}
+.btn:hover{background:var(--cobalt)}
+.btn:hover .arr{transform:translate(2px,-2px)}
+.tlink{
+  font:450 14.5px var(--sans);text-decoration:none;color:var(--ink-2);
+  display:inline-flex;align-items:baseline;gap:7px;padding:4px 0;
+  background:linear-gradient(currentColor,currentColor) 0 100%/0 1px no-repeat;
+  transition:background-size .45s var(--ease),color .25s;
+}
+.tlink .k{font:400 10.5px var(--mono);color:var(--ink-4)}
+.tlink:hover{background-size:100% 1px;color:var(--ink)}
 
-/* ─── Entrance ─── */
-@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.nav,.hero,section.content{animation:rise .9s cubic-bezier(.22,1,.36,1) both}
-.hero{animation-delay:.05s}
-#abstract{animation-delay:.12s}
+/* Fig. 1 — memory table */
+.mt{margin:0;border-top:1px solid var(--ink);padding-top:14px}
+.fig-top{display:flex;justify-content:space-between;gap:16px;font:400 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.fig-top b{color:var(--ink);font-weight:500}
+.mt-seq{display:flex;flex-wrap:wrap;gap:2px 9px;margin:22px 0 18px;font:italic 400 21px/1.3 var(--serif);min-height:56px}
+.mt-seq span{color:var(--ink-5);transition:color .6s var(--ease)}
+.mt-seq span.on{color:var(--ink-2)}
+.mt-seq span.cur{color:var(--verm)}
+.mt-rows{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
+.mt-row{
+  position:relative;display:grid;grid-template-columns:64px 104px minmax(0,1fr);align-items:center;
+  height:31px;border-bottom:1px solid var(--rule);transition:background .6s var(--ease);
+}
+.mt-row .id{font:400 11.5px var(--mono);color:var(--ink-4);text-align:right;padding-right:16px;transition:color .5s;font-variant-numeric:tabular-nums}
+.mt-row .tk{font:italic 400 15px var(--serif);color:var(--ink-3);transition:color .5s}
+.vec{display:flex;align-items:center;gap:2px;height:17px;padding-right:2px}
+.vec i{flex:1;height:calc(var(--h) * 100%);background:var(--ink);opacity:.17;border-radius:.5px;transition:background .6s var(--ease),opacity .6s var(--ease),transform .6s var(--ease)}
+.mt-row.seen .vec i{opacity:.34}
+.mt-row.seen .tk{color:var(--ink-2)}
+.mt-row.hit{background:var(--verm-4)}
+.mt-row.hit .vec i{background:var(--verm);opacity:1}
+.mt-row.hit .id,.mt-row.hit .tk{color:var(--verm)}
+.mt-row::after{
+  content:"";position:absolute;left:-14px;top:50%;width:6px;height:6px;margin-top:-3px;
+  background:var(--verm);transform:scale(0);transition:transform .5s var(--ease)
+}
+.mt-row.hit::after{transform:scale(1)}
+.mt-gap{height:19px;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:64px 1fr;align-items:center}
+.mt-gap span{font:400 11px var(--mono);color:var(--ink-5);text-align:right;padding-right:16px;letter-spacing:.1em;line-height:1}
+.mt-read{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-top:16px}
+.mt-eq{font:italic 400 22px var(--serif);color:var(--ink)}
+.mt-eq sub{font-size:.6em;font-style:normal;font-family:var(--mono)}
+.mt-eq .m{color:var(--verm)}
+.mt-ops{font:400 11px var(--mono);color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.cap{margin:18px 0 0;font:400 12.5px/1.55 var(--sans);color:var(--ink-3);max-width:52ch}
+.cap b{font-weight:500;color:var(--ink)}
 
-/* ─── Navigation ─── */
-.nav{
-  height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px;
-  border-bottom:1px solid var(--hairline);
-  box-shadow:0 4px 0 -3px var(--bg),0 5px 0 -3px var(--hairline);
+/* ───────────────────────── Sections ───────────────────────── */
+.sec{
+  max-width:var(--max);margin:auto;padding:clamp(80px,10vw,148px) var(--pad) 0;
+  display:grid;grid-template-columns:var(--margin) minmax(0,1fr);column-gap:var(--gutter);align-items:start;
 }
-.brand{
-  font-family:var(--serif);font-weight:480;font-size:19px;
-  letter-spacing:-.01em;text-decoration:none;
+.sec > *{grid-column:2;min-width:0}
+.sec > .m{grid-column:1;grid-row:span 4}
+.sec > .full{grid-column:1 / -1}
+.sec-head{
+  grid-column:1 / -1;display:grid;grid-template-columns:subgrid;
+  border-top:1px solid var(--ink);padding-top:20px;margin-bottom:clamp(32px,4vw,56px);
 }
-.brand span{font-style:italic;font-weight:400;color:var(--green)}
-.navlinks{display:flex;gap:26px;align-items:center}
-.navlinks a{
-  text-decoration:none;color:var(--body);
-  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
-  padding:4px 0;border-bottom:1px solid transparent;
-  transition:color .25s,border-color .25s;
+.sec-head .lab{grid-column:1;font:400 11.5px/1.5 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding-top:.55em}
+.sec-head .lab b{display:block;font-weight:500;color:var(--verm)}
+.sec-head h2{
+  grid-column:2;margin:0;font:400 clamp(42px,5.4vw,80px)/.98 var(--display);letter-spacing:-.025em;max-width:15ch;text-wrap:balance;
 }
-.navlinks a:hover{color:var(--green);border-color:rgba(67,116,90,.4)}
+.sec-head h2 em{font-style:italic}
+#h-code{max-width:none;font-size:clamp(34px,4.4vw,68px);white-space:nowrap}
+@media (max-width:640px){#h-code{white-space:normal;font-size:clamp(30px,8vw,44px)}}
+.prose{font:380 clamp(17.5px,1.35vw,20px)/1.62 var(--serif);color:var(--ink-2);max-width:62ch;margin:0;text-wrap:pretty}
+.prose + .prose{margin-top:1em}
+.prose.big{font-size:clamp(20px,1.75vw,25px);line-height:1.5;color:var(--ink);max-width:56ch}
+.prose.big::first-line{font-variant:small-caps;letter-spacing:.02em}
+.note{font:400 12.5px/1.55 var(--sans);color:var(--ink-3);margin:0;padding-top:.5em;max-width:28ch}
+.note::before{content:"†";display:block;font:italic 18px/1 var(--serif);color:var(--verm);margin-bottom:8px}
+.src{font:400 12px/1.6 var(--sans);color:var(--ink-3);margin:18px 0 0;max-width:80ch}
 
-/* ─── Hero ─── */
-.hero{text-align:center;padding:104px 0 84px;border-bottom:1px solid var(--hairline)}
-.eyebrow{
-  font:600 10px var(--mono);letter-spacing:.26em;
-  color:var(--green);text-transform:uppercase;
-  display:flex;align-items:center;justify-content:center;gap:14px;
-}
-.eyebrow::before,.eyebrow::after{
-  content:"";width:26px;height:1px;background:var(--green);opacity:.5;
-}
-.hero h1{
-  font-family:var(--serif);font-weight:340;font-variation-settings:"opsz" 144;
-  font-size:clamp(56px,8vw,108px);line-height:1.02;
-  letter-spacing:-.035em;margin:26px 0 26px;
-}
-.hero .lede{
-  max-width:660px;margin:0 auto 26px;
-  font-family:var(--serif);font-weight:380;
-  color:var(--body);font-size:19.5px;line-height:1.7;
-}
-.author{font-size:13px;color:var(--muted);margin-bottom:32px;letter-spacing:.03em}
-.author a{
-  text-decoration:none;color:var(--green);
-  border-bottom:1px solid rgba(67,116,90,.35);padding-bottom:1px;
-  transition:border-color .25s;
-}
-.author a:hover{border-color:var(--green)}
-.links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.pill{
-  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
-  border:1px solid var(--hairline-strong);padding:11px 20px;border-radius:100px;
-  background:var(--paper);font-weight:550;font-size:12.5px;letter-spacing:.02em;
-  transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s,background .25s,border-color .25s;
-}
-.pill.primary{background:var(--ink);color:#fffdf8;border-color:var(--ink)}
-.pill:hover{
-  transform:translateY(-2px);
-  box-shadow:0 10px 24px -8px rgba(34,30,22,.18);
-  border-color:rgba(34,30,22,.32);
-}
-.pill.primary:hover{background:#171410}
+/* ───────────────────────── Method ───────────────────────── */
+.eq{margin:clamp(48px,6vw,80px) 0 0;padding:clamp(28px,3vw,40px) 0 clamp(32px,3.5vw,44px);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.eq-was{font:400 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.eq-was .old{font:italic 400 24px var(--serif);text-transform:none;letter-spacing:0;color:var(--ink-4);position:relative}
+.eq-was .old s{text-decoration:none;position:relative}
+.eq-was .old s::after{content:"";position:absolute;left:-3px;right:-3px;top:54%;height:1.5px;background:var(--verm);transform:scaleX(0);transform-origin:left;transition:transform 1s var(--ease) .4s}
+.eq.in .eq-was .old s::after{transform:scaleX(1)}
+.eq-main{display:flex;flex-wrap:wrap;align-items:flex-start;gap:0 clamp(14px,2vw,30px);margin-top:22px;font:italic 400 clamp(46px,6.6vw,104px)/1 var(--display);letter-spacing:-.01em}
+.term{display:inline-flex;flex-direction:column;gap:16px}
+.term .t{white-space:nowrap}
+.term sub{font:italic 400 .34em var(--serif);letter-spacing:0;margin-left:.06em}
+.term .a{font:400 12.5px/1.45 var(--sans);font-style:normal;letter-spacing:0;color:var(--ink-3);max-width:22ch;border-top:1px solid var(--rule-2);padding-top:10px}
+.term .a b{display:block;font:500 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink);margin-bottom:3px}
+.term.mem .t{color:var(--verm)}
+.term.mem .a{border-top-color:var(--verm)}
+.term.mem .a b{color:var(--verm)}
+.mb{position:relative;display:inline-block}
+.mb::before{content:"";position:absolute;left:.2em;right:-.04em;top:.04em;height:max(1.5px,.05em);background:currentColor}
+.op{color:var(--ink-4);font-style:normal;font-family:var(--display)}
+.variants{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:clamp(48px,5vw,72px)}
+.variant{padding:4px clamp(18px,2.2vw,32px) 4px;border-left:1px solid var(--rule)}
+.variant:first-child{padding-left:0;border-left:0}
+.variant .vk{display:flex;align-items:center;justify-content:space-between;gap:10px;font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.tag{font:500 10px var(--mono);letter-spacing:.07em;padding:3px 7px 2px;border-radius:2px;border:1px solid var(--ink);color:var(--ink)}
+.tag.prop{border-style:dashed;border-color:var(--ink-4);color:var(--ink-3)}
+.variant h3{font:400 clamp(24px,2.1vw,30px)/1.1 var(--display);letter-spacing:-.01em;margin:18px 0 12px}
+.variant p{font:400 14px/1.6 var(--sans);color:var(--ink-2);margin:0;max-width:36ch}
 
-/* ─── Sections ─── */
-section.content{padding:82px 0;border-bottom:1px solid var(--hairline)}
-.section-kicker{
-  color:var(--green);font:600 10px var(--mono);
-  letter-spacing:.26em;text-transform:uppercase;
-  display:flex;align-items:center;gap:14px;
+/* ───────────────────────── Demo plate ───────────────────────── */
+.plate{
+  margin-top:clamp(40px,5vw,64px);
+  background-color:var(--paper-2);
+  background-image:radial-gradient(circle at 1px 1px,var(--rule) 1px,transparent 1.3px);
+  background-size:18px 18px;
+  border:1px solid var(--rule);border-radius:6px;
+  padding:clamp(20px,3vw,44px);
 }
-.section-kicker::before{content:"";width:26px;height:1px;background:var(--green);opacity:.5}
-.section-title{
-  font-family:var(--serif);font-weight:340;
-  font-size:clamp(32px,4vw,48px);line-height:1.1;
-  letter-spacing:-.025em;margin:16px 0 20px;
+.plate-top{display:flex;justify-content:space-between;gap:20px;align-items:baseline}
+.seq{
+  display:flex;flex-wrap:nowrap;gap:6px clamp(10px,1.2vw,18px);margin:18px 0 0;
+  font:400 clamp(30px,3.7vw,56px)/1.1 var(--display);letter-spacing:-.01em;
+  overflow-x:auto;scrollbar-width:none;
 }
-.prose{
-  max-width:840px;color:var(--body);margin:0;
-  font-family:var(--serif);font-weight:380;
-  font-size:16px;line-height:1.95;
+.seq::-webkit-scrollbar{display:none}
+.tok{
+  all:unset;cursor:pointer;position:relative;display:inline-flex;flex-direction:column;gap:2px;
+  color:var(--ink-5);padding:2px 0 8px;transition:color .6s var(--ease);
 }
-.tiny{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.tok .ix{font:400 10px var(--mono);letter-spacing:.06em;color:var(--ink-4);transition:color .4s}
+.tok::after{
+  content:"";position:absolute;left:0;right:0;bottom:2px;height:2px;background:var(--cobalt);
+  transform:scaleX(0);transform-origin:0 50%;transition:transform .7s var(--ease);
+}
+.tok:hover{color:var(--ink-3)}
+.tok.past{color:var(--ink-2)}
+.tok.cur{color:var(--cobalt);font-style:italic}
+.tok.cur .ix{color:var(--cobalt)}
+.tok.cur::after{transform:scaleX(1)}
+.tok:focus-visible{outline:1.5px solid var(--cobalt);outline-offset:4px}
 
-/* ─── Method ─── */
-.methodgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:36px}
-.methodcard{
-  padding:26px;border:1px solid var(--hairline);
-  background:var(--paper);border-radius:15px;
-  box-shadow:0 1px 2px rgba(34,30,22,.02);
-  transition:transform .3s cubic-bezier(.22,1,.36,1),box-shadow .3s,border-color .3s;
+.transport{
+  margin-top:clamp(24px,3vw,36px);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:clamp(16px,2.4vw,32px);
+  background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:12px 14px;
 }
-.methodcard:hover{
-  transform:translateY(-3px);
-  border-color:var(--hairline-strong);
-  box-shadow:0 14px 34px -14px rgba(34,30,22,.14);
+.tp-btns{display:flex;align-items:center;gap:4px}
+.ib{
+  width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:3px;background:transparent;color:var(--ink-2);
+  transition:background .25s,color .25s;
 }
-.methodcard small{
-  color:var(--muted);font:600 9.5px var(--mono);letter-spacing:.2em;
-}
-.methodcard h3{
-  font-family:var(--serif);font-weight:480;font-size:19px;
-  letter-spacing:-.01em;margin:12px 0 10px;
-}
-.methodcard p{font-size:13px;line-height:1.8;color:var(--body);margin:0}
-.equation{
-  text-align:center;font-family:var(--serif);font-style:italic;
-  font-size:clamp(22px,3vw,30px);font-weight:400;letter-spacing:.01em;
-  margin:30px 0 14px;padding:28px 22px;
-  background:var(--pale);border:1px solid rgba(67,116,90,.16);
-  border-radius:15px;color:#33593f;
-}
+.ib:hover:not(:disabled){background:var(--paper-2);color:var(--ink)}
+.ib:disabled{opacity:.28;cursor:not-allowed}
+.ib.play{width:42px;height:42px;border-radius:50%;background:var(--ink);color:var(--paper);margin-right:6px}
+.ib.play:hover{background:var(--cobalt);color:var(--paper)}
+.scrub{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.sb{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:7px;padding:6px 0}
+.sb i{display:block;height:3px;border-radius:2px;background:var(--rule-2);transition:background .5s var(--ease)}
+.sb span{font:400 10px var(--mono);color:var(--ink-4);letter-spacing:.04em;transition:color .3s}
+.sb.past i{background:var(--ink-2)}
+.sb.cur i{background:var(--cobalt)}
+.sb.cur span{color:var(--cobalt)}
+.sb:hover i{background:var(--ink-3)}
+.sb:focus-visible{outline:1.5px solid var(--cobalt);outline-offset:2px;border-radius:2px}
+.speed{display:flex;border:1px solid var(--rule);border-radius:999px;padding:2px}
+.speed button{border:0;background:transparent;font:400 11px var(--mono);letter-spacing:.04em;color:var(--ink-3);padding:6px 11px;border-radius:999px;transition:background .25s,color .25s}
+.speed button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.speed button:hover:not([aria-pressed="true"]){color:var(--ink)}
+.caption{display:flex;gap:18px;align-items:baseline;margin:16px 2px 0;font:400 13.5px/1.55 var(--sans);color:var(--ink-2)}
+.caption .ph{font:500 11px var(--mono);letter-spacing:.06em;color:var(--cobalt);white-space:nowrap}
+.caption .kbd{margin-left:auto;font:400 11px var(--mono);color:var(--ink-4);white-space:nowrap}
+kbd{font:inherit;border:1px solid var(--rule-2);border-bottom-width:2px;border-radius:3px;padding:0 5px;color:var(--ink-3)}
 
-/* ─── Demo (v3 animation components) ─── */
-.surface{
-  background:var(--paper);
-  border:1px solid var(--hairline);
-  border-radius:18px;
-  box-shadow:var(--shadow);
-  overflow:hidden;
-  min-width:0;
-}
-.surface-head{
-  padding:24px 30px;
-  display:flex;align-items:center;justify-content:space-between;gap:20px;
-  border-bottom:1px solid var(--hairline);
-}
-.surface-title{
-  font-family:var(--serif);font-weight:480;font-size:18px;
-  letter-spacing:-.01em;color:var(--ink);
-}
-.surface-sub{font-size:11.5px;color:var(--muted);margin-top:6px;letter-spacing:.01em}
-.surface-index{font:10px var(--mono);letter-spacing:.14em;color:var(--faint);white-space:nowrap}
+.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(14px,1.6vw,22px);margin-top:clamp(20px,2.4vw,28px)}
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:4px;min-width:0;overflow:hidden}
+.panel-h{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:18px 22px 14px;border-bottom:1px solid var(--rule)}
+.panel-h h3{margin:0;font:400 26px/1.1 var(--display);letter-spacing:-.01em}
+.panel-h h3 em{font-style:italic;color:var(--verm)}
+.panel-h p{margin:4px 0 0;font:400 12.5px var(--sans);color:var(--ink-3)}
+.panel-h .fn{font:400 11px var(--mono);color:var(--ink-4);letter-spacing:.06em;white-space:nowrap}
+.dg{display:block;width:100%;height:auto;padding:10px 6px 4px}
 
-.prompt{margin:30px 0 26px}
-.prompt-viewport{
-  position:relative;height:150px;
-  background:linear-gradient(180deg,#fffef9,#fcfbf4);
-  overflow:hidden;margin:22px 26px 0;
-  border:1px solid var(--hairline);border-radius:13px;isolation:isolate;
-}
-.prompt-track{
-  position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;
-  width:max-content;transform:translate3d(0,0,0);
-  transition:transform 920ms cubic-bezier(.4,0,.2,1);will-change:transform;
-}
-.prompt-row{display:flex;align-items:center;gap:12px;width:max-content}
-.prompt-token{
-  position:relative;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;gap:9px;
-  min-width:107px;height:54px;padding:0 17px;
-  border:1px solid var(--hairline);border-radius:10px;
-  background:#faf8f1;color:var(--faint);cursor:pointer;
-  transition:background .4s,border-color .4s,box-shadow .4s,color .4s,opacity .4s,transform .4s;
-}
-.prompt-token:hover{border-color:var(--hairline-strong)}
-.prompt-token .number{font:10px var(--mono);letter-spacing:.06em;color:var(--faint)}
-.prompt-token .word{font-family:var(--serif);font-size:15px;font-weight:440;letter-spacing:.01em}
-.prompt-token.past{background:var(--pale);border-color:rgba(67,116,90,.14);color:#6f9176}
-.prompt-token.future{opacity:.5}
-.prompt-token.current{
-  opacity:1;background:var(--paper);color:#33593f;
-  border:1px solid rgba(67,116,90,.5);transform:translateY(-2px);
-  box-shadow:0 0 0 4px rgba(124,171,145,.08),0 10px 26px -6px rgba(52,89,63,.16);
-}
-.prompt-token.current .number{color:var(--green)}
-.spotlight{
-  position:absolute;left:50%;transform:translateX(-50%);
-  top:11px;bottom:11px;width:138px;border-radius:12px;
-  border:1px solid rgba(116,153,128,.14);pointer-events:none;z-index:2;
-}
-.spotlight:after{
-  content:"";position:absolute;left:50%;top:-10px;bottom:-10px;width:1px;
-  background:linear-gradient(transparent,rgba(80,133,99,.3) 25%,rgba(80,133,99,.46) 50%,rgba(80,133,99,.3) 75%,transparent);
-}
-.fade{position:absolute;top:0;bottom:0;width:100px;z-index:3;pointer-events:none}
-.fade.left{left:0;background:linear-gradient(90deg,#fffef9,transparent)}
-.fade.right{right:0;background:linear-gradient(270deg,#fcfbf4,transparent)}
-.prompt-meta{
-  display:flex;align-items:center;justify-content:center;gap:10px;
-  padding:18px 18px 24px;color:var(--muted);font-size:11px;letter-spacing:.04em;
-}
-.prompt-meta strong{font-family:var(--serif);font-style:italic;font-weight:480;font-size:14px;color:var(--green)}
-.prompt-meta .separator{color:var(--faint)}
+.dg text{font-family:var(--mono);font-size:10.5px;fill:var(--ink-4)}
+.dg .h{font-family:var(--display);font-style:italic;font-size:28px;fill:var(--ink)}
+.dg .sub{font-family:var(--sans);font-size:11px;fill:var(--ink-3)}
+.dg .lbl{font-family:var(--sans);font-size:11.5px;fill:var(--ink-3)}
+.dg .cpu-t{font-family:var(--mono);font-size:10px;letter-spacing:.12em;fill:var(--verm)}
+.dg .cpu-n{font-family:var(--mono);font-size:10.5px;fill:var(--verm-2)}
+.dg .cpu-n.strong{fill:var(--verm)}
+.dg .cpu{fill:color-mix(in oklch,var(--verm-4) 70%,var(--paper));stroke:var(--verm-2);stroke-width:1;stroke-dasharray:3 3}
+.dg .cell{fill:var(--paper-2);stroke:var(--rule);stroke-width:1;transition:fill .55s var(--ease),stroke .55s var(--ease)}
+.dg .masked{fill:url(#hatch)}
+.dg .q-past{fill:var(--cobalt-4);stroke:var(--cobalt-3)}
+.dg .q-cur{fill:var(--cobalt);stroke:var(--cobalt)}
+.dg .k-old,.dg .v-old{fill:var(--green-4);stroke:var(--green-3)}
+.dg .k-cur,.dg .v-cur{fill:var(--green);stroke:var(--green)}
+.dg .att-old{fill:var(--cobalt-4);stroke:color-mix(in oklch,var(--cobalt-3) 60%,transparent)}
+.dg .att-cur{fill:var(--cobalt-3);stroke:var(--cobalt-2)}
+.dg .att-focus{fill:var(--cobalt);stroke:var(--cobalt)}
+.dg .out-old{fill:var(--ink-5);stroke:var(--ink-5)}
+.dg .out-cur{fill:var(--green);stroke:var(--green)}
+.dg .lk-old{fill:var(--verm-4);stroke:var(--verm-3)}
+.dg .lk-cur{fill:var(--verm-3);stroke:var(--verm-2)}
+.dg .lk-focus{fill:var(--verm);stroke:var(--verm)}
+.dg .ix-cur{fill:var(--ink);font-weight:500}
+.dg .ix-green{fill:var(--green)}
+.dg .link{fill:none;stroke-width:1.3;stroke-linecap:round;stroke:var(--ink-4)}
+.dg .link.blue{stroke:var(--cobalt-2)}
+.dg .link.cpu{stroke:var(--verm)}
+.dg .mk-ink{fill:var(--ink-4)}
+.dg .mk-blue{fill:var(--cobalt-2)}
+.dg .mk-cpu{fill:var(--verm)}
+.dg .h.m{fill:var(--verm)}
+.dg .mbar{stroke:var(--verm);stroke-width:1.6}
+.dg .mv{transition:transform .7s var(--ease)}
 
-.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}
-.diagram-wrap{
-  padding:18px 10px 16px;
-}
-.diagram{display:block;width:100%;height:auto}
-svg text{font-family:var(--sans)}
-.svg-heading{font-family:var(--serif);font-size:18px;font-weight:480;letter-spacing:-.01em;fill:var(--ink)}
-.svg-sub{font-size:11px;letter-spacing:.02em;fill:#a39d8f}
-.svg-index{font:10.5px var(--mono);fill:#aba595}
-.svg-label{font-size:11px;letter-spacing:.02em;fill:#948e7f}
-.cpu-zone{fill:#fbf7ee;stroke:#e9dcc9;stroke-width:1}
-.cpu-text{font-size:9.5px;font-weight:600;letter-spacing:.14em;fill:var(--copper)}
-.cpu-note{font-size:10px;fill:#b09a7f}
-.cell{fill:var(--empty);stroke:var(--hairline);stroke-width:1}
-.q-idle{fill:var(--bpal);stroke:#dbe7ee}
-.q-current{fill:var(--blue);stroke:#376b89;stroke-width:1.5}
-.k-old,.v-old{fill:#b7d7c1;stroke:#a4cbb0}
-.k-current,.v-current{fill:#639d76;stroke:#477d58;stroke-width:1.5}
-.att-old{fill:#e6f1e8}
-.att-current{fill:#a8d4b5;stroke:#8abe9a}
-.att-focus{fill:#629e76;stroke:#457d58;stroke-width:1.5}
-.output-old{fill:#dce9ee}
-.output-current{fill:var(--blue);stroke:#376b89;stroke-width:1.5}
-.lookup-old{fill:#f3e9dc;stroke:#e9d9c5}
-.lookup-current{fill:#dcbf9e;stroke:#c9a681}
-.lookup-focus{fill:#b88e61;stroke:#987047;stroke-width:1.5}
-.link{stroke:#bccbbc;stroke-width:1.4;stroke-linecap:round;fill:none}
-.link.blue{stroke:#8cacc0}
-.link.cpu{stroke:#be9c75}
+.plate-foot{display:flex;justify-content:space-between;gap:24px 40px;flex-wrap:wrap;align-items:flex-start;margin-top:clamp(20px,2.4vw,28px)}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;font:400 12px var(--sans);color:var(--ink-3)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.plate-foot .cap{margin:0;max-width:60ch}
 
-.player{margin-top:26px}
-.player-main{padding:24px 30px;display:flex;align-items:center;justify-content:space-between;gap:20px}
-.phase{font:11px var(--mono);letter-spacing:.18em;color:var(--green)}
-.caption{margin-top:8px;color:var(--body);font-size:12.5px;line-height:1.75;max-width:640px}
-.controls{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.controls button{
-  width:40px;height:40px;border:1px solid var(--hairline);border-radius:10px;
-  background:#fbf9f3;color:var(--green);cursor:pointer;font-size:16px;
-  transition:transform .25s cubic-bezier(.22,1,.36,1),background .25s,border-color .25s,box-shadow .25s;
-}
-.controls button:hover:not(:disabled){background:var(--pale);border-color:rgba(67,116,90,.25);transform:translateY(-1px)}
-.controls button:active:not(:disabled){transform:translateY(0)}
-.controls button.play{
-  background:var(--green);border-color:var(--green);color:#fffdf8;
-  width:46px;height:46px;border-radius:50%;
-  box-shadow:0 6px 18px -6px rgba(67,116,90,.5);
-}
-.controls button.play:hover{background:#3a6850;transform:translateY(-1px);box-shadow:0 9px 22px -6px rgba(67,116,90,.55)}
-.controls button:disabled{opacity:.3;cursor:not-allowed}
-.progress{height:3px;background:rgba(34,30,22,.06)}
-.progress div{
-  width:0;height:100%;border-radius:0 2px 2px 0;
-  background:linear-gradient(90deg,#7cab91,var(--green));
-  transition:width .35s cubic-bezier(.22,1,.36,1);
-}
+/* ───────────────────────── Results ───────────────────────── */
+.figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:clamp(44px,5vw,72px);border-top:1px solid var(--ink)}
+.fig{padding:22px clamp(18px,2.2vw,32px) 0;border-left:1px solid var(--rule)}
+.fig:first-child{padding-left:0;border-left:0}
+.fig .k{font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.num{display:block;margin:18px 0 0;font:400 clamp(60px,6.6vw,104px)/.9 var(--display);letter-spacing:-.035em;font-variant-numeric:lining-nums}
+.num small{font:400 .32em var(--sans);letter-spacing:0;margin-left:.15em;color:var(--ink-3)}
+.fig h4{margin:18px 0 6px;font:500 14.5px/1.4 var(--sans);letter-spacing:-.005em}
+.fig p{margin:0;font:400 13px/1.55 var(--sans);color:var(--ink-3);max-width:34ch}
+.fig .vs{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;margin-top:16px;font:400 11px var(--mono);color:var(--ink-3);max-width:300px}
+.fig .vs i{display:block;height:4px;border-radius:2px;background:var(--ink-5)}
+.fig .vs i.ma{background:var(--verm)}
 
-.settings{
-  display:flex;justify-content:center;gap:34px;flex-wrap:wrap;align-items:center;
-  margin:30px 0 24px;color:var(--muted);font-size:11px;letter-spacing:.05em;
-}
-.settings label{display:flex;align-items:center;gap:12px}
-.settings input[type="range"]{
-  -webkit-appearance:none;appearance:none;width:168px;height:2px;border-radius:2px;
-  background:rgba(34,30,22,.14);cursor:pointer;
-}
-.settings input[type="range"]::-webkit-slider-thumb{
-  -webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;
-  background:var(--paper);border:1.5px solid var(--green);
-  box-shadow:0 1px 4px rgba(34,30,22,.18);transition:transform .2s;
-}
-.settings input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.15)}
-.settings input[type="range"]::-moz-range-thumb{
-  width:14px;height:14px;border-radius:50%;background:var(--paper);
-  border:1.5px solid var(--green);box-shadow:0 1px 4px rgba(34,30,22,.18);
-}
-#sliderValue{font:11px var(--mono);color:var(--green);min-width:18px}
-.settings select{
-  appearance:none;border:1px solid var(--hairline);border-radius:8px;
-  background:var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23938d7e' stroke-width='1.2'/%3E%3C/svg%3E") no-repeat right 10px center;
-  color:var(--body);padding:8px 30px 8px 12px;cursor:pointer;transition:border-color .25s;
-}
-.settings select:hover{border-color:var(--hairline-strong)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tbl{width:100%;border-collapse:collapse;font:400 14px var(--sans);font-variant-numeric:tabular-nums}
+.tbl caption{caption-side:top;text-align:left;font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding-bottom:12px}
+.tbl th{font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:12px 14px 10px;border-top:1.5px solid var(--ink);border-bottom:1px solid var(--ink);white-space:nowrap}
+.tbl td{padding:13px 14px;border-bottom:1px solid var(--rule);color:var(--ink-2);white-space:nowrap}
+.tbl tbody tr:last-child td{border-bottom:1.5px solid var(--ink)}
+.tbl th:first-child,.tbl td:first-child{padding-left:22px}
+.tbl td:first-child{position:relative;color:var(--ink)}
+.tbl .r{text-align:right}
+.tbl .b{color:var(--cobalt);font-weight:600}
+.tbl tbody tr{transition:background .25s}
+.tbl tbody tr:hover{background:color-mix(in oklch,var(--paper-2) 80%,transparent)}
+.tbl tr.ma td:first-child::before{content:"";position:absolute;left:6px;top:50%;width:6px;height:6px;margin-top:-3px;background:var(--verm)}
+.tbl .cfg b{font-weight:500}
+.tbl .cfg span{color:var(--ink-3)}
+.tbl .math{font:italic 400 15.5px var(--serif);color:var(--ink)}
+.delta{display:inline-flex;align-items:center;gap:12px;justify-content:flex-end;color:var(--ink)}
+.delta i{display:block;height:6px;width:calc(var(--v) * 96px);background:var(--cobalt);border-radius:1px}
+.main-tbl{margin-top:clamp(48px,5vw,72px)}
+.keyline{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font:400 12px var(--sans);color:var(--ink-3)}
+.keyline span{display:inline-flex;align-items:center;gap:8px}
 
-.legend{
-  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;
-  color:var(--muted);font-size:11px;letter-spacing:.04em;
-}
-.legend span{display:flex;gap:9px;align-items:center}
-.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(34,30,22,.08)}
+.sub-h{margin:clamp(72px,8vw,112px) 0 0;padding-top:18px;border-top:1px solid var(--rule-2)}
+.sub-h h3{margin:0;font:400 clamp(32px,3.4vw,48px)/1.02 var(--display);letter-spacing:-.02em}
+.sub-h h3 em{font-style:italic}
+.sub-h p{margin:16px 0 0;font:400 14.5px/1.6 var(--sans);color:var(--ink-2);max-width:70ch}
+.abls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(48px,5vw,72px) clamp(28px,3.6vw,56px);margin-top:clamp(40px,4.4vw,60px)}
+.abl{min-width:0}
+.abl-k{display:flex;align-items:baseline;gap:12px;margin:0;font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.abl-k b{font:italic 400 28px/1 var(--display);letter-spacing:0;text-transform:none;color:var(--verm)}
+.abl h4{margin:10px 0 18px;font:400 clamp(22px,1.9vw,27px)/1.12 var(--display);letter-spacing:-.01em}
+.abl .tbl{font-size:13px}
+.abl .tbl th{font-size:9.5px;padding:10px 10px 8px;white-space:normal;vertical-align:bottom;line-height:1.35}
+.abl .tbl td{padding:10px}
+.abl .tbl th:first-child,.abl .tbl td:first-child{padding-left:20px}
+.abl .tbl .math{font-size:14.5px}
+.abl-n{margin:14px 0 0;font:400 13px/1.6 var(--sans);color:var(--ink-3);max-width:60ch}
+.abl-n b{color:var(--verm);font-weight:600}
+.more{margin-top:clamp(40px,4vw,56px)}
 
-/* ─── Results ─── */
-.resultgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:28px 0}
-.resultcard{
-  background:var(--paper);border:1px solid var(--hairline);
-  border-radius:15px;padding:26px;
-  box-shadow:0 1px 2px rgba(34,30,22,.02);
-  transition:transform .3s cubic-bezier(.22,1,.36,1),box-shadow .3s,border-color .3s;
-}
-.resultcard:hover{
-  transform:translateY(-3px);
-  border-color:var(--hairline-strong);
-  box-shadow:0 14px 34px -14px rgba(34,30,22,.14);
-}
-.resultcard b{
-  display:block;font-family:var(--serif);font-weight:340;
-  font-size:36px;letter-spacing:-.02em;color:var(--green);
-}
-.resultcard span{display:block;font-size:12px;line-height:1.7;color:var(--body);margin-top:10px}
-.tablewrap{
-  overflow-x:auto;border:1px solid var(--hairline);
-  border-radius:15px;background:var(--paper);
-  box-shadow:0 1px 2px rgba(34,30,22,.02);
-}
-table{border-collapse:collapse;width:100%;min-width:570px;font-size:13px}
-th,td{text-align:left;padding:14px 20px;border-bottom:1px solid var(--hairline)}
-th{
-  background:#f7f3e9;color:var(--body);
-  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
-}
-td{color:var(--body)}
-td:first-child{font-family:var(--serif);font-size:14px;color:var(--ink)}
-tr:last-child td{border-bottom:none}
-tbody tr{transition:background .2s}
-tbody tr:hover{background:rgba(67,116,90,.04)}
-td.good{color:var(--green);font-weight:600}
+/* ───────────────────────── Implementation ───────────────────────── */
+.tree{margin-top:clamp(40px,4.4vw,60px);border-top:1px solid var(--ink)}
+.tree-root{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:16px 0;border-bottom:1px solid var(--rule);font:500 14px var(--mono)}
+.tree-root span{font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.tree-row{display:grid;grid-template-columns:30px minmax(0,300px) 120px minmax(0,1fr);gap:0 20px;align-items:baseline;padding:20px 0;border-bottom:1px solid var(--rule);transition:background .3s}
+.tree-row:hover{background:color-mix(in oklch,var(--paper-2) 70%,transparent)}
+.tree-row .br{font:400 14px var(--mono);color:var(--ink-5)}
+.tree-row .p{font:500 14px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.tree-row .r{font:400 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--verm)}
+.tree-row .d{font:400 14px/1.55 var(--sans);color:var(--ink-2)}
 
+/* ───────────────────────── Citation ───────────────────────── */
+.bib{
+  position:relative;background:var(--ink);color:var(--paper-3);border-radius:6px;
+  padding:clamp(24px,3vw,40px);overflow:auto;
+}
+.bib-h{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px;font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:oklch(70% .01 75)}
+.copy{
+  display:inline-flex;align-items:center;gap:9px;border:1px solid oklch(100% 0 0 / .18);border-radius:999px;
+  background:transparent;color:var(--paper);font:500 12px var(--sans);padding:8px 14px;transition:background .25s,border-color .25s;
+}
+.copy:hover{background:oklch(100% 0 0 / .08);border-color:oklch(100% 0 0 / .3)}
+.copy.ok{border-color:var(--verm);color:var(--verm-3)}
+.bib pre{margin:0;font:400 13.5px/1.9 var(--mono);white-space:pre-wrap;color:oklch(86% .01 80)}
+.bib .ty{color:var(--verm-2)}
+.bib .ky{color:var(--paper)}
+.bib .f{color:oklch(68% .012 75)}
+.bib .s{color:oklch(88% .045 263)}
 
-/* ─── Ablations ─── */
-.abltitle{
-  font-family:var(--serif);font-weight:340;
-  font-size:clamp(24px,3vw,30px);letter-spacing:-.02em;
-  margin:48px 0 12px;
-}
-.abllede{max-width:840px;color:var(--body);font-size:14px;line-height:1.8;margin:0 0 22px}
-.ablgrid2{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:10px}
-.ablhead small{color:var(--muted);font:600 9px var(--mono);letter-spacing:.2em}
-.ablhead h4{
-  font-family:var(--serif);font-weight:480;font-size:18px;
-  letter-spacing:-.01em;margin:7px 0 12px;
-}
-.ablitem .tablewrap{border-radius:12px}
-.ablitem table{min-width:0;font-size:11.5px}
-.ablitem th,.ablitem td{padding:9px 13px}
-.ablitem th{font-size:9px;letter-spacing:.1em}
-.ablitem td:first-child{font-size:12px}
-.ablnote{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.7;letter-spacing:.02em}
-.ablnote b{color:var(--green);font-weight:600}
+/* ───────────────────────── Footer ───────────────────────── */
+.foot{max-width:var(--max);margin:clamp(96px,11vw,160px) auto 0;padding:0 var(--pad) 40px}
+.foot-in{border-top:1px solid var(--ink);padding-top:22px;display:grid;grid-template-columns:var(--margin) minmax(0,1fr) auto;column-gap:var(--gutter);row-gap:16px;align-items:start}
+.foot p{margin:0;font:400 12.5px/1.6 var(--sans);color:var(--ink-3)}
+.foot .links{display:flex;gap:22px}
+.foot .links a{font:450 13px var(--sans);text-decoration:none;color:var(--ink-2);transition:color .25s}
+.foot .links a:hover{color:var(--verm)}
 
-/* ─── Citation ─── */
-.citation{
-  position:relative;border:1px solid var(--hairline);
-  background:var(--paper);border-radius:15px;padding:26px;overflow:auto;
-  box-shadow:0 1px 2px rgba(34,30,22,.02);
-}
-.citation pre{
-  white-space:pre-wrap;line-height:1.9;
-  font:12.5px var(--mono);margin:0;color:var(--body);
-}
-.copybtn{
-  border:1px solid var(--hairline);border-radius:9px;padding:8px 14px;
-  background:#fbf9f3;font-size:11px;letter-spacing:.06em;float:right;
-  color:var(--body);
-  transition:background .25s,border-color .25s,transform .25s;
-}
-.copybtn:hover{background:var(--pale);border-color:rgba(67,116,90,.25);transform:translateY(-1px)}
+/* ───────────────────────── Motion ───────────────────────── */
+@keyframes up{from{transform:translateY(104%)}to{transform:none}}
+@keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.js h1 .line > span{animation:up 1.15s var(--ease) both}
+.js h1 .line:nth-child(2) > span{animation-delay:.09s}
+.js .hero [data-l]{animation:fade 1s var(--ease) both;animation-delay:calc(.25s + var(--d,0) * 70ms)}
+.js [data-r]{opacity:0;transform:translateY(18px);transition:opacity 1s var(--ease),transform 1s var(--ease);transition-delay:calc(var(--d,0) * 80ms)}
+.js [data-r].in{opacity:1;transform:none}
 
-/* ─── Footer ─── */
-.foot{
-  display:flex;justify-content:space-between;gap:12px;
-  padding:30px 0 46px;font-size:11px;color:var(--muted);letter-spacing:.05em;
-}
-.foot a{
-  text-decoration:none;border-bottom:1px solid transparent;
-  transition:color .25s,border-color .25s;
-}
-.foot a:hover{color:var(--green);border-color:rgba(67,116,90,.35)}
-
-/* ─── Responsive ─── */
-@media(max-width:1100px){
+/* ───────────────────────── Responsive ───────────────────────── */
+@media (max-width:1080px){
   .compare{grid-template-columns:1fr}
+  .hero{grid-template-columns:1fr;align-items:start}
+  .mt{max-width:620px}
 }
-@media(max-width:900px){
-  .methodgrid,.resultgrid,.ablgrid2{grid-template-columns:1fr}
-  .navlinks{gap:14px}
+@media (max-width:900px){
+  .sec{grid-template-columns:minmax(0,1fr)}
+  .sec > *,.sec > .m,.sec > .full{grid-column:1}
+  .sec-head{display:block}
+  .sec-head .lab{display:flex;gap:12px;padding:0 0 18px}
+  .sec > .m{grid-row:auto;margin-bottom:20px}
+  .note{max-width:60ch;display:flex;gap:10px}
+  .note::before{margin:0}
+  .variants,.figs{grid-template-columns:1fr}
+  .variant,.fig{padding:24px 0;border-left:0;border-top:1px solid var(--rule)}
+  .variant:first-child,.fig:first-child{border-top:0}
+  .abls{grid-template-columns:1fr}
+  .tree-row{grid-template-columns:24px minmax(0,1fr);row-gap:6px}
+  .tree-row .r,.tree-row .d{grid-column:2}
+  .foot-in{grid-template-columns:1fr}
+  .transport{grid-template-columns:1fr auto}
+  .scrub{grid-column:1 / -1;grid-row:2}
+  .caption .kbd{display:none}
 }
-@media(max-width:620px){
-  .wrap{padding:0 16px}
-  .navlinks{gap:12px}
-  .navlinks a:nth-child(-n+2){display:none}
-  .hero{padding:70px 0 60px}
-  .hero .lede{font-size:16px}
-  .foot{flex-wrap:wrap}
-  .surface-head{padding:20px}
-  .prompt-viewport{margin:16px 14px 0}
-  .player-main{padding:20px;flex-wrap:wrap}
-  .controls{width:100%;justify-content:flex-end}
+@media (max-width:860px){.nav{display:none}.top .cta{margin-left:auto}}
+@media (max-width:640px){
+  .seq{font-size:clamp(22px,6vw,40px)}
+  .top-in{gap:16px}
+  .actions{gap:14px 22px}
+  .mt-row{grid-template-columns:54px 88px minmax(0,1fr)}
+  .mt-gap{grid-template-columns:54px 1fr}
+  .eq-main{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px 20px;font-size:50px}
+  .term{display:contents}
+  .term .a{max-width:none}
+  .op{grid-column:1 / -1;font-size:.55em;line-height:.8}
+  .plate{padding:16px;border-radius:4px}
+  .panel-h{padding:16px}
+  .caption{flex-direction:column;gap:4px}
+  .transport{grid-template-columns:minmax(0,1fr);gap:12px}
+  .scrub{grid-row:auto}
+  .speed{justify-self:start}
 }
-@media(prefers-reduced-motion:reduce){
-  *,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .js [data-r]{opacity:1;transform:none}
 }
 </style>
+<base target="_blank">
 </head>
 <body>
-<div class="wrap">
-<header class="nav"><a class="brand" href="#top">memory <span>attention.</span></a><nav class="navlinks"><a href="#demo">Demo</a><a href="#method">Method</a><a href="#results">Results</a><a href="#citation">Cite</a><a href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">GitHub ↗</a></nav></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="5" height="5" fill="oklch(95.1% .011 83)"/>
+      <line x1="0" y1="0" x2="0" y2="5" stroke="oklch(20.5% .014 65 / .09)" stroke-width="1.2"/>
+    </pattern>
+  </defs>
+</svg>
+
+<header class="top" id="top-bar">
+  <div class="top-in">
+    <a class="brand" href="#top" aria-label="Memory Attention — back to top">
+      <span class="glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      Memory Attention
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#abstract" data-s="abstract"><span class="n">01</span>Abstract</a>
+      <a href="#method" data-s="method"><span class="n">02</span>Method</a>
+      <a href="#demo" data-s="demo"><span class="n">03</span>Demo</a>
+      <a href="#results" data-s="results"><span class="n">04</span>Results</a>
+      <a href="#code" data-s="code"><span class="n">05</span>Code</a>
+      <a href="#citation" data-s="citation"><span class="n">06</span>Cite</a>
+    </nav>
+    <a class="cta" href="https://arxiv.org/pdf/2609.28399" target="_blank" rel="noopener">Paper ↗</a>
+  </div>
+  <div class="readline" aria-hidden="true"></div>
+</header>
+
 <main id="top">
-<section class="hero"><div class="eyebrow">arXiv:2609.28399 · September 2026 · Research paper</div><h1>Memory Attention</h1><p class="lede">Replacing the value projection with token-indexed memory and contextual keys.</p><div class="author"><a href="https://joluck.github.io/" target="_blank" rel="noopener">Jiale Kang</a></div><div class="links"><a class="pill primary" href="https://arxiv.org/pdf/2609.28399" target="_blank" rel="noopener">↗ Read paper</a><a class="pill" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">⌘ Source code</a><a class="pill" href="#demo">▷ Interactive demo</a><a class="pill" href="#citation">❝ BibTeX</a></div></section>
-<section class="content" id="abstract"><div class="section-kicker">01 / Abstract</div><h2 class="section-title">What if values could be retrieved?</h2><p class="prose">Memory Attention (MA) investigates replacing a dedicated attention value projection with learned token-indexed memory, complemented by context-dependent keys. Each attention layer learns a token memory table; its retrieved representation contributes reusable token-specific information, while the key representation retains contextual information. At inference, row normalization can be folded into the memory table, leaving lookup and addition to construct values. CPU placement and prefetching provide a parameter-storage trade-off. Experiments report improvements in language modeling and average downstream scores under matched training-token budgets, with additional memory parameters.</p><p class="tiny">Summary adapted from the paper's abstract; see the paper for its full text and limitations.</p></section><section class="content" id="demo"><div class="section-kicker">02 / Interactive visualization</div><h2 class="section-title">Attention, token by token.</h2><p class="prose">Follow the input stream and compare standard causal attention with the proposed memory-lookup interpretation. The right-hand lookup triangle represents repeated accesses to historical token IDs, not a physically stored triangular tensor.</p><section class="surface prompt">
-  <div class="surface-head">
-    <div>
-      <div class="surface-title">The sequence</div>
-      <div class="surface-sub">Follow each token as it moves through the model</div>
+
+<!-- ───────────── Hero ───────────── -->
+<section class="hero" aria-labelledby="title">
+  <div>
+    <div class="meta" data-l style="--d:0">
+      <span class="live">Preprint</span>
+      <span>arXiv:2609.28399</span>
+      <span>cs.LG</span>
+      <span>September 2026</span>
     </div>
-    <span class="surface-index">01 — INPUT</span>
-  </div>
-  <div class="prompt-viewport" id="promptViewport">
-    <div class="prompt-track" id="promptTrack">
-      <div class="prompt-row" id="promptRow"></div>
+    <h1 id="title">
+      <span class="line"><span>Memory</span></span>
+      <span class="line"><span><em>Attention</em><span class="stop">.</span></span></span>
+    </h1>
+    <p class="lede" data-l style="--d:2">Replacing the value projection with token-indexed memory and contextual keys.</p>
+    <p class="byline" data-l style="--d:3">By <a href="https://joluck.github.io/" target="_blank" rel="noopener">Jiale Kang</a></p>
+    <div class="actions" data-l style="--d:4">
+      <a class="btn" href="https://arxiv.org/pdf/2609.28399" target="_blank" rel="noopener">Read the paper <span class="arr">↗</span></a>
+      <a class="tlink" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">Source code <span class="k">GitHub</span></a>
+      <a class="tlink" href="#demo">Interactive demo <span class="k">§03</span></a>
+      <a class="tlink" href="#citation">BibTeX <span class="k">§06</span></a>
     </div>
-    <div class="spotlight"></div>
-    <div class="fade left"></div>
-    <div class="fade right"></div>
   </div>
-  <div class="prompt-meta">
-    <span>Current token</span>
-    <strong id="currentWord">Memory</strong>
-    <span class="separator">/</span>
-    <span id="tokenFraction">01 of 08</span>
+
+  <figure class="mt" data-l style="--d:3" aria-label="Animated illustration: each token ID gathers one row from a layer's memory table">
+    <div class="fig-top"><span><b>Fig. 1</b>&ensp;Token-indexed memory</span><span>M̄<sub>ℓ</sub> · one per layer</span></div>
+    <div class="mt-seq" id="mtSeq" aria-hidden="true"></div>
+    <ol class="mt-rows" id="mtRows" aria-hidden="true"></ol>
+    <div class="mt-read" aria-hidden="true">
+      <span class="mt-eq" id="mtEq"></span>
+      <span class="mt-ops">1 gather · 1 add</span>
+    </div>
+    <figcaption class="cap">Rows are gathered by <b>token ID</b>, not by position, so the lookups jump around the table. IDs are illustrative.</figcaption>
+  </figure>
+</section>
+
+<!-- ───────────── 01 Abstract ───────────── -->
+<section class="sec" id="abstract" aria-labelledby="h-abstract">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 01</b>Abstract</div>
+    <h2 id="h-abstract">What if values could be <em>retrieved?</em></h2>
+  </header>
+  <aside class="m" data-r style="--d:1"><p class="note">Summary adapted from the paper's abstract; see the paper for its full text and limitations.</p></aside>
+  <div data-r style="--d:1">
+    <p class="prose big">Memory Attention (MA) investigates replacing a dedicated attention value projection with learned token-indexed memory, complemented by context-dependent keys.</p>
+    <p class="prose" style="margin-top:1.2em">Each attention layer learns a token memory table; its retrieved representation contributes reusable token-specific information, while the key representation retains contextual information. At inference, row normalization can be folded into the memory table, leaving lookup and addition to construct values. CPU placement and prefetching provide a parameter-storage trade-off. Experiments report improvements in language modeling and average downstream scores under matched training-token budgets, with additional memory parameters.</p>
   </div>
 </section>
 
-<div class="compare">
-  <section class="surface">
-    <div class="surface-head">
-      <div>
-        <div class="surface-title">Standard Attention</div>
-        <div class="surface-sub">Keys and values are retained in the GPU cache</div>
-      </div>
-      <span class="surface-index">02</span>
-    </div>
-    <div class="diagram-wrap">
-      <svg id="standard" class="diagram" viewBox="0 0 650 635" role="img" aria-label="Standard attention"></svg>
-    </div>
-  </section>
-  <section class="surface">
-    <div class="surface-head">
-      <div>
-        <div class="surface-title">Memory Attention</div>
-        <div class="surface-sub">Cached keys · CPU memory lookup · Reconstructed values</div>
-      </div>
-      <span class="surface-index">03</span>
-    </div>
-    <div class="diagram-wrap">
-      <svg id="memory" class="diagram" viewBox="0 0 650 635" role="img" aria-label="Memory attention and CPU memory lookup"></svg>
-    </div>
-  </section>
-</div>
+<!-- ───────────── 02 Method ───────────── -->
+<section class="sec" id="method" aria-labelledby="h-method">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 02</b>Method</div>
+    <h2 id="h-method">Memory <em>instead of</em> a value projection.</h2>
+  </header>
+  <aside class="m" data-r style="--d:1"><p class="note">The contextual key used to form values is distinct from the RoPE-transformed key used in attention scoring.</p></aside>
+  <p class="prose" data-r style="--d:1">Standard attention produces values with a learned dense projection. MA combines a pre-normalization content key with memory retrieved using the original token ID. Normalized rows may be precomputed for inference.</p>
 
-<section class="surface player">
-  <div class="player-main">
-    <div>
-      <div id="phase" class="phase">TOKEN 01 / 08</div>
-      <div id="caption" class="caption"></div>
-    </div>
-    <div class="controls">
-      <button id="prev" aria-label="Previous token">←</button>
-      <button id="next" aria-label="Next token">→</button>
-      <button class="play" id="play" aria-label="Play or pause">▶</button>
-      <button id="reset" aria-label="Reset">↺</button>
+  <div class="eq" data-r id="eq">
+    <div class="eq-was">Standard <span class="old">V = x<s>W<sub>V</sub></s></span> becomes</div>
+    <div class="eq-main" role="math" aria-label="V equals K content plus M-bar indexed by token IDs">
+      <span class="term"><span class="t">V</span><span class="a"><b>Value</b>Built from a lookup and an addition.</span></span>
+      <span class="op" aria-hidden="true">=</span>
+      <span class="term"><span class="t">K<sub>content</sub></span><span class="a"><b>Contextual key</b>Pre-normalization content key, not the RoPE key.</span></span>
+      <span class="op" aria-hidden="true">+</span>
+      <span class="term mem"><span class="t"><span class="mb">M</span>[ids]</span><span class="a"><b>Token memory</b>Layer-specific table, rows normalized, gathered by token ID.</span></span>
     </div>
   </div>
-  <div class="progress"><div id="progressBar"></div></div>
+
+  <div class="variants">
+    <article class="variant" data-r style="--d:0">
+      <div class="vk"><span>01 · Value</span><span class="tag">Core</span></div>
+      <h3>Memory-based construction</h3>
+      <p>Eliminates the independent V projection, using a layer-specific table and contextual keys instead.</p>
+    </article>
+    <article class="variant" data-r style="--d:1">
+      <div class="vk"><span>02 · Offload</span><span class="tag">Evaluated</span></div>
+      <h3>CPU memory, GPU compute</h3>
+      <p>The token-indexed table may reside on CPU. Prefetching overlaps required lookups and transfers with computation while a conventional KV cache remains in use.</p>
+    </article>
+    <article class="variant" data-r style="--d:2">
+      <div class="vk"><span>03 · Recall</span><span class="tag prop">Proposed</span></div>
+      <h3>Reconstruct historical values</h3>
+      <p>Retain sufficient K information and token IDs, then rebuild V on demand. This extension was not included in the paper's inference benchmarks.</p>
+    </article>
+  </div>
 </section>
 
-<div class="settings">
-  <label>
-    Token position
-    <input type="range" id="slider" min="1" max="8" step="1" value="1">
-    <span id="sliderValue">01</span>
-  </label>
-  <label>
-    Playback
-    <select id="speed">
-      <option value="1600">Normal</option>
-      <option value="950">Fast</option>
-      <option value="2800">Slow</option>
-    </select>
-  </label>
-</div>
+<!-- ───────────── 03 Demo ───────────── -->
+<section class="sec" id="demo" aria-labelledby="h-demo">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 03</b>Interactive</div>
+    <h2 id="h-demo">Attention, <em>token by token.</em></h2>
+  </header>
+  <aside class="m" data-r style="--d:1"><p class="note">The lookup triangle represents repeated accesses to historical token IDs, not a physically stored triangular tensor.</p></aside>
+  <p class="prose" data-r style="--d:1">Follow the input stream and compare standard causal attention with the proposed memory-lookup interpretation.</p>
 
-<div class="legend">
-  <span><i class="swatch" style="background:#477493"></i>Current query</span>
-  <span><i class="swatch" style="background:#a8d4b5"></i>Active attention</span>
-  <span><i class="swatch" style="background:#e6f1e8"></i>Previous positions</span>
-  <span><i class="swatch" style="background:#dcbf9e"></i>CPU lookup</span>
-  <span><i class="swatch" style="background:#f4f1ea"></i>Inactive</span>
-</div>
-<p class="researchmeta">Conceptual animation only. In actual MA, attention values use pre-RoPE content keys. MA-Recall requires preserving or recovering the correct key representation, with additional retrieval and positional-transform costs.</p></section>
+  <div class="plate full" data-r id="plate">
+    <div class="plate-top">
+      <span class="fig-top" style="flex:1"><span><b>Fig. 2</b>&ensp;Input sequence</span><span>Select any token</span></span>
+    </div>
+    <div class="seq" id="seq" role="group" aria-label="Input tokens"></div>
 
-<section class="content" id="method"><div class="section-kicker">03 / Method</div><h2 class="section-title">Memory instead of a value projection.</h2><p class="prose">Standard attention produces values with a learned dense projection. MA combines a pre-normalization content key with memory retrieved using the original token ID. Normalized rows may be precomputed for inference. The contextual key used to form values is distinct from the RoPE-transformed key used in attention scoring.</p><div class="equation">V = K<sub>content</sub> + M̄[token IDs]</div><div class="methodgrid"><div class="methodcard"><small>01 / VALUE</small><h3>Memory-based construction</h3><p>Eliminates the independent V projection, using a layer-specific table and contextual keys instead.</p></div><div class="methodcard"><small>02 / OFFLOAD · EVALUATED</small><h3>CPU memory, GPU compute</h3><p>The token-indexed table may reside on CPU. Prefetching overlaps required lookups and transfers with computation while a conventional KV cache remains in use.</p></div><div class="methodcard"><small>03 / RECALL · PROPOSED</small><h3>Reconstruct historical values</h3><p>Retain sufficient K information and token IDs, then rebuild V on demand. This extension was not included in the paper's inference benchmarks.</p></div></div></section>
-<section class="content" id="results"><div class="section-kicker">04 / Results</div><h2 class="section-title">Quality and efficiency in the reported settings.</h2><p class="prose">The following values are from the paper's experimental tables. MA models have additional learned memory parameters; the comparisons match training-token budgets, not parameter counts.</p><div class="resultgrid"><div class="resultcard"><b>41.39</b><span>MHA + MA average downstream score, vs 40.68 Standard (1024 hidden, 10B tokens).</span></div><div class="resultcard"><b>7.38%</b><span>Less GPU parameter storage for MA-Offload vs Standard in the reference inference setup; excludes KV cache and buffers.</span></div><div class="resultcard"><b>17.189 ms</b><span>MA-Offload decode forward-pass latency vs 17.636 ms Standard at batch 8, 2K context; not a universal speed claim.</span></div></div><div class="tablewrap"><table><thead><tr><th>Configuration (10B tokens)</th><th>Standard Avg. ↑</th><th>MA Avg. ↑</th><th>Difference</th></tr></thead><tbody><tr><td>MHA · 1024 hidden</td><td>40.68</td><td class="good">41.39</td><td>+0.71</td></tr><tr><td>GQA · 1024 hidden</td><td>40.90</td><td class="good">41.51</td><td>+0.61</td></tr><tr><td>MQA · 1024 hidden</td><td>41.11</td><td class="good">41.34</td><td>+0.23</td></tr><tr><td>Gated · 1024 hidden</td><td>41.40</td><td class="good">42.88</td><td>+1.48</td></tr></tbody></table></div><p class="tiny">Source: paper language-modeling results table and Table 4 (inference). Average is the unweighted mean of seven accuracy-based evaluations. MA-Recall is not part of the reported inference measurements.</p>
-<h3 class="abltitle">Ablations: where and how memory helps.</h3>
-<p class="abllede">Key findings from the paper's ablation studies. Unless noted, all models use 24 layers, hidden size 1,024, 10B training tokens, and roughly 0.5M tokens per batch.</p>
-<div class="ablgrid2"><div class="ablitem">
-  <div class="ablhead"><small>INTEGRATION</small><h4>Reusing keys as values works best</h4></div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Configuration</th><th>Params.</th><th>LAMBADA PPL ↓</th><th>WikiText PPL ↓</th><th>Avg. ↑</th></tr></thead>
-    <tbody>
-      <tr><td>V = xW (standard)</td><td>336M</td><td>50.38</td><td>31.84</td><td>41.11</td></tr>
-      <tr><td>V = M</td><td>526M</td><td>58.36</td><td>32.94</td><td>40.34</td></tr>
-      <tr><td>V = (1−λ)·xW + λ·E[i]</td><td>532M</td><td>47.87</td><td>31.12</td><td>40.99</td></tr>
-      <tr><td>V = xW + M</td><td>532M</td><td class="good">45.68</td><td>29.89</td><td>41.28</td></tr>
-      <tr><td>V = K + M</td><td>526M</td><td>45.93</td><td class="good">29.82</td><td class="good">41.38</td></tr>
-    </tbody>
-  </table></div>
-  <p class="ablnote">Memory alone (V = M) degrades the average to 40.34 — memory complements input-dependent values rather than replacing them; key–value reuse with additive memory is the best integration.</p>
-</div>
+    <div class="transport">
+      <div class="tp-btns">
+        <button class="ib play" id="play" aria-label="Play"></button>
+        <button class="ib" id="prev" aria-label="Previous token"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="ib" id="next" aria-label="Next token"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="ib" id="reset" aria-label="Reset to first token"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4M3.6 2.4v2.6h2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="scrub" id="scrub" role="group" aria-label="Token position"></div>
+      <div class="speed" id="speed" role="group" aria-label="Playback speed">
+        <button type="button" data-ms="2800" aria-pressed="false">0.5×</button>
+        <button type="button" data-ms="1600" aria-pressed="true">1×</button>
+        <button type="button" data-ms="950" aria-pressed="false">2×</button>
+      </div>
+    </div>
+    <p class="caption"><span class="ph" id="phase">TOKEN 01 / 08</span><span id="caption" aria-live="polite"></span><span class="kbd"><kbd>Space</kbd> <kbd>←</kbd> <kbd>→</kbd></span></p>
 
-<div class="ablitem">
-  <div class="ablhead"><small>PLACEMENT</small><h4>Enrich values, not matching</h4></div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Memory added to</th><th>Params.</th><th>LAMBADA PPL ↓</th><th>WikiText PPL ↓</th><th>Avg. ↑</th></tr></thead>
-    <tbody>
-      <tr><td>Hidden states · H = H + M</td><td>526M</td><td>50.22</td><td>30.68</td><td>41.14</td></tr>
-      <tr><td>Queries · Q = Q + M</td><td>526M</td><td>59.69</td><td>33.17</td><td>40.55</td></tr>
-      <tr><td>Keys · K = K + M</td><td>526M</td><td>58.23</td><td>32.63</td><td>40.35</td></tr>
-      <tr><td>Values · V = V + M</td><td>526M</td><td class="good">45.93</td><td class="good">29.82</td><td class="good">41.38</td></tr>
-      <tr><td>Outputs · O = O + M</td><td>526M</td><td>71.83</td><td>34.47</td><td>39.83</td></tr>
-    </tbody>
-  </table></div>
-  <p class="ablnote">Shared key–value representations (K = V). Memory helps most when enriching what attention aggregates; output-side injection is the worst, with LAMBADA perplexity rising to <b>71.83</b>.</p>
-</div>
+    <div class="compare">
+      <section class="panel" aria-labelledby="h-std">
+        <div class="panel-h">
+          <div><h3 id="h-std">Standard attention</h3><p>Keys and values are retained in the GPU cache</p></div>
+          <span class="fn">2a</span>
+        </div>
+        <svg id="standard" class="dg" viewBox="0 0 650 635" role="img" aria-label="Standard attention: query, cached keys, attention scores, cached values, output"></svg>
+      </section>
+      <section class="panel" aria-labelledby="h-mem">
+        <div class="panel-h">
+          <div><h3 id="h-mem"><em>Memory</em> attention</h3><p>Cached keys · CPU memory lookup · reconstructed values</p></div>
+          <span class="fn">2b</span>
+        </div>
+        <svg id="memory" class="dg" viewBox="0 0 650 635" role="img" aria-label="Memory attention: cached keys with CPU memory lookup of historical token IDs"></svg>
+      </section>
+    </div>
 
-<div class="ablitem">
-  <div class="ablhead"><small>NORMALIZATION</small><h4>Normalize the memory rows</h4></div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Configuration</th><th>Params.</th><th>LAMBADA PPL ↓</th><th>WikiText PPL ↓</th><th>Avg. ↑</th></tr></thead>
-    <tbody>
-      <tr><td>V = K + E[i]</td><td>526M</td><td>54.46</td><td>32.60</td><td>40.85</td></tr>
-      <tr><td>V = K + Norm(E[i])</td><td>526M</td><td class="good">45.93</td><td class="good">29.82</td><td class="good">41.38</td></tr>
-    </tbody>
-  </table></div>
-  <p class="ablnote">Controlling the scale of memory embeddings balances the key and memory contributions, improving both language modeling and downstream accuracy.</p>
-</div>
+    <div class="plate-foot">
+      <div class="legend">
+        <span><i class="sw" style="background:var(--cobalt)"></i>Current query</span>
+        <span><i class="sw" style="background:var(--cobalt-3)"></i>Active attention</span>
+        <span><i class="sw" style="background:var(--cobalt-4);box-shadow:inset 0 0 0 1px var(--cobalt-3)"></i>Previous positions</span>
+        <span><i class="sw" style="background:var(--green-4);box-shadow:inset 0 0 0 1px var(--green-3)"></i>Cached keys &amp; values</span>
+        <span><i class="sw" style="background:var(--verm)"></i>CPU lookup</span>
+        <span><i class="sw" style="background:repeating-linear-gradient(45deg,var(--paper-2) 0 2px,var(--rule-2) 2px 3px)"></i>Causal mask</span>
+      </div>
+      <p class="cap">Conceptual animation only. In actual MA, attention values use pre-RoPE content keys. MA-Recall requires preserving or recovering the correct key representation, with additional retrieval and positional-transform costs.</p>
+    </div>
+  </div>
+</section>
 
-<div class="ablitem">
-  <div class="ablhead"><small>ATTNRES</small><h4>Complementary to attention residuals</h4></div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Configuration</th><th>Params.</th><th>LAMBADA PPL ↓</th><th>WikiText PPL ↓</th><th>Avg. ↑</th></tr></thead>
-    <tbody>
-      <tr><td>Standard</td><td>336M</td><td>50.38</td><td>31.84</td><td>41.11</td></tr>
-      <tr><td>Standard + AttnRes</td><td>336M</td><td>39.59</td><td>29.77</td><td>41.00</td></tr>
-      <tr><td>MA</td><td>526M</td><td>45.93</td><td>29.82</td><td>41.38</td></tr>
-      <tr><td>MA + AttnRes</td><td>526M</td><td class="good">38.37</td><td class="good">28.88</td><td class="good">41.46</td></tr>
-    </tbody>
-  </table></div>
-  <p class="ablnote">AttnRes improves both Standard and MA; MA + AttnRes reaches the best overall numbers, showing explicit memory and residual propagation are complementary.</p>
-</div></div>
-<p class="tiny" style="margin-top:14px">Source: paper ablation studies (integration, placement, normalization, and AttnRes tables).</p>
-<p><a class="pill" href="https://arxiv.org/html/2609.28399v1#S4" target="_blank" rel="noopener">Explore all experiments ↗</a></p></section>
-<section class="content" id="code"><div class="section-kicker">05 / Implementation</div><h2 class="section-title">Built on Flash Linear Attention.</h2><p class="prose">The public implementation exposes an MA layer and a Hugging Face-style causal language model. CPU-offload comparisons are currently in standalone profiling scripts; the repository README does not describe them as integrated into the primary causal LM implementation.</p><div class="methodgrid"><div class="methodcard"><small>CORE LAYER</small><h3>fla/layers/memory_attn.py</h3><p>Key projections, layer-specific token-indexed memory and value construction.</p></div><div class="methodcard"><small>MODEL</small><h3>fla/models/memory/</h3><p>Backbone configuration and causal language model interface.</p></div><div class="methodcard"><small>PROFILING</small><h3>profile/</h3><p>Reference inference experiments and CPU-offloading traces.</p></div></div><p style="margin-top:20px"><a class="pill" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">View repository ↗</a></p></section>
-<section class="content" id="citation"><div class="section-kicker">06 / Citation</div><h2 class="section-title">Cite this work.</h2><div class="citation"><button class="copybtn" id="copy">Copy BibTeX</button><pre id="bib">@misc{kang2026memoryattention,
-  title={Memory Attention},
-  author={Jiale Kang},
-  year={2026},
-  eprint={2609.28399},
-  archivePrefix={arXiv},
-  primaryClass={cs.LG},
-  url={https://arxiv.org/abs/2609.28399}
-}</pre></div></section>
-</main><footer class="foot"><span>© 2026 · Memory Attention · Jiale Kang</span><span><a href="https://arxiv.org/abs/2609.28399">Paper</a> · <a href="https://github.com/Joluck/memory-attention">Code</a></span></footer>
-</div>
+<!-- ───────────── 04 Results ───────────── -->
+<section class="sec" id="results" aria-labelledby="h-results">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 04</b>Results</div>
+    <h2 id="h-results">Quality and efficiency, <em>in the reported settings.</em></h2>
+  </header>
+  <aside class="m" data-r style="--d:1"><p class="note">MA models have additional learned memory parameters; comparisons match training-token budgets, not parameter counts.</p></aside>
+  <p class="prose" data-r style="--d:1">The following values are from the paper's experimental tables.</p>
+
+  <div class="figs">
+    <div class="fig" data-r style="--d:0">
+      <span class="k">Quality · MHA + MA</span>
+      <span class="num">41.39</span>
+      <h4>Average downstream score</h4>
+      <p>vs 40.68 Standard, 1024 hidden, 10B tokens.</p>
+    </div>
+    <div class="fig" data-r style="--d:1">
+      <span class="k">Storage · MA-Offload</span>
+      <span class="num">7.38<small>%</small></span>
+      <h4>Less GPU parameter storage</h4>
+      <p>vs Standard in the reference inference setup; excludes KV cache and buffers.</p>
+    </div>
+    <div class="fig" data-r style="--d:2">
+      <span class="k">Latency · MA-Offload</span>
+      <span class="num">No<small>overhead</small></span>
+      <h4>Decode forward-pass latency</h4>
+      <p>17.189 ms vs 17.636 ms Standard at batch 8, 2K context — offloading adds no extra overhead.</p>
+    </div>
+  </div>
+
+  <div class="main-tbl" data-r>
+    <div class="tw">
+      <table class="tbl">
+        <caption>Table 1 · Average downstream score, 10B training tokens</caption>
+        <thead><tr><th>Configuration</th><th class="r">Standard avg. ↑</th><th class="r">MA avg. ↑</th><th class="r">Difference</th></tr></thead>
+        <tbody>
+          <tr><td class="cfg"><b>MHA</b> <span>· 1024 hidden</span></td><td class="r">40.68</td><td class="r b">41.39</td><td class="r"><span class="delta" style="--v:.48"><i></i>+0.71</span></td></tr>
+          <tr><td class="cfg"><b>GQA</b> <span>· 1024 hidden</span></td><td class="r">40.90</td><td class="r b">41.51</td><td class="r"><span class="delta" style="--v:.41"><i></i>+0.61</span></td></tr>
+          <tr><td class="cfg"><b>MQA</b> <span>· 1024 hidden</span></td><td class="r">41.11</td><td class="r b">41.34</td><td class="r"><span class="delta" style="--v:.155"><i></i>+0.23</span></td></tr>
+          <tr><td class="cfg"><b>Gated</b> <span>· 1024 hidden</span></td><td class="r">41.40</td><td class="r b">42.88</td><td class="r"><span class="delta" style="--v:1"><i></i>+1.48</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="src">Source: paper language-modeling results table and Table 4 (inference). Average is the unweighted mean of seven accuracy-based evaluations. MA-Recall is not part of the reported inference measurements.</p>
+  </div>
+
+  <div class="sub-h" data-r>
+    <h3>Ablations: <em>where and how memory helps.</em></h3>
+    <p>Key findings from the paper's ablation studies. Unless noted, all models use 24 layers, hidden size 1,024, 10B training tokens, and roughly 0.5M tokens per batch.</p>
+    <div class="keyline">
+      <span><i class="sw" style="background:var(--verm);width:6px;height:6px;border-radius:0"></i>Memory Attention configuration</span>
+      <span><b style="color:var(--cobalt);font-weight:600">41.38</b>&nbsp;Best in column</span>
+    </div>
+  </div>
+
+  <div class="abls full">
+    <article class="abl" data-r style="--d:0">
+      <p class="abl-k"><b>A</b>Integration</p>
+      <h4>Reusing keys as values works best.</h4>
+      <div class="tw"><table class="tbl">
+        <thead><tr><th>Configuration</th><th class="r">Params.</th><th class="r">LAMBADA PPL ↓</th><th class="r">WikiText PPL ↓</th><th class="r">Avg. ↑</th></tr></thead>
+        <tbody>
+          <tr><td><span class="math">V = xW</span> <span style="color:var(--ink-3)">std.</span></td><td class="r">336M</td><td class="r">50.38</td><td class="r">31.84</td><td class="r">41.11</td></tr>
+          <tr><td><span class="math">V = M</span></td><td class="r">526M</td><td class="r">58.36</td><td class="r">32.94</td><td class="r">40.34</td></tr>
+          <tr><td><span class="math">V = (1−λ)·xW + λ·E[i]</span></td><td class="r">532M</td><td class="r">47.87</td><td class="r">31.12</td><td class="r">40.99</td></tr>
+          <tr><td><span class="math">V = xW + M</span></td><td class="r">532M</td><td class="r b">45.68</td><td class="r">29.89</td><td class="r">41.28</td></tr>
+          <tr class="ma"><td><span class="math">V = K + M</span></td><td class="r">526M</td><td class="r">45.93</td><td class="r b">29.82</td><td class="r b">41.38</td></tr>
+        </tbody>
+      </table></div>
+      <p class="abl-n">Memory alone (V = M) degrades the average to 40.34 — memory complements input-dependent values rather than replacing them; key–value reuse with additive memory is the best integration.</p>
+    </article>
+
+    <article class="abl" data-r style="--d:1">
+      <p class="abl-k"><b>B</b>Placement</p>
+      <h4>Enrich values, not matching.</h4>
+      <div class="tw"><table class="tbl">
+        <thead><tr><th>Memory added to</th><th class="r">Params.</th><th class="r">LAMBADA PPL ↓</th><th class="r">WikiText PPL ↓</th><th class="r">Avg. ↑</th></tr></thead>
+        <tbody>
+          <tr><td>Hidden states · <span class="math">H + M</span></td><td class="r">526M</td><td class="r">50.22</td><td class="r">30.68</td><td class="r">41.14</td></tr>
+          <tr><td>Queries · <span class="math">Q + M</span></td><td class="r">526M</td><td class="r">59.69</td><td class="r">33.17</td><td class="r">40.55</td></tr>
+          <tr><td>Keys · <span class="math">K + M</span></td><td class="r">526M</td><td class="r">58.23</td><td class="r">32.63</td><td class="r">40.35</td></tr>
+          <tr class="ma"><td>Values · <span class="math">V + M</span></td><td class="r">526M</td><td class="r b">45.93</td><td class="r b">29.82</td><td class="r b">41.38</td></tr>
+          <tr><td>Outputs · <span class="math">O + M</span></td><td class="r">526M</td><td class="r">71.83</td><td class="r">34.47</td><td class="r">39.83</td></tr>
+        </tbody>
+      </table></div>
+      <p class="abl-n">Shared key–value representations (K = V). Memory helps most when enriching what attention aggregates; output-side injection is the worst, with LAMBADA perplexity rising to <b>71.83</b>.</p>
+    </article>
+
+    <article class="abl" data-r style="--d:0">
+      <p class="abl-k"><b>C</b>Normalization</p>
+      <h4>Normalize the memory rows.</h4>
+      <div class="tw"><table class="tbl">
+        <thead><tr><th>Configuration</th><th class="r">Params.</th><th class="r">LAMBADA PPL ↓</th><th class="r">WikiText PPL ↓</th><th class="r">Avg. ↑</th></tr></thead>
+        <tbody>
+          <tr><td><span class="math">V = K + E[i]</span></td><td class="r">526M</td><td class="r">54.46</td><td class="r">32.60</td><td class="r">40.85</td></tr>
+          <tr class="ma"><td><span class="math">V = K + Norm(E[i])</span></td><td class="r">526M</td><td class="r b">45.93</td><td class="r b">29.82</td><td class="r b">41.38</td></tr>
+        </tbody>
+      </table></div>
+      <p class="abl-n">Controlling the scale of memory embeddings balances the key and memory contributions, improving both language modeling and downstream accuracy.</p>
+    </article>
+
+    <article class="abl" data-r style="--d:1">
+      <p class="abl-k"><b>D</b>AttnRes</p>
+      <h4>Complementary to attention residuals.</h4>
+      <div class="tw"><table class="tbl">
+        <thead><tr><th>Configuration</th><th class="r">Params.</th><th class="r">LAMBADA PPL ↓</th><th class="r">WikiText PPL ↓</th><th class="r">Avg. ↑</th></tr></thead>
+        <tbody>
+          <tr><td>Standard</td><td class="r">336M</td><td class="r">50.38</td><td class="r">31.84</td><td class="r">41.11</td></tr>
+          <tr><td>Standard + AttnRes</td><td class="r">336M</td><td class="r">39.59</td><td class="r">29.77</td><td class="r">41.00</td></tr>
+          <tr class="ma"><td>MA</td><td class="r">526M</td><td class="r">45.93</td><td class="r">29.82</td><td class="r">41.38</td></tr>
+          <tr class="ma"><td>MA + AttnRes</td><td class="r">526M</td><td class="r b">38.37</td><td class="r b">28.88</td><td class="r b">41.46</td></tr>
+        </tbody>
+      </table></div>
+      <p class="abl-n">AttnRes improves both Standard and MA; MA + AttnRes reaches the best overall numbers, showing explicit memory and residual propagation are complementary.</p>
+    </article>
+  </div>
+  <p class="src" data-r>Source: paper ablation studies (integration, placement, normalization, and AttnRes tables).</p>
+  <p class="more" data-r><a class="btn" href="https://arxiv.org/html/2609.28399v1#S4" target="_blank" rel="noopener">Explore all experiments <span class="arr">↗</span></a></p>
+</section>
+
+<!-- ───────────── 05 Implementation ───────────── -->
+<section class="sec" id="code" aria-labelledby="h-code">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 05</b>Implementation</div>
+    <h2 id="h-code">Built on <em>Flash Linear Attention.</em></h2>
+  </header>
+  <aside class="m" data-r style="--d:1"><p class="note">CPU-offload comparisons live in standalone profiling scripts, not the primary causal LM.</p></aside>
+  <p class="prose" data-r style="--d:1">The public implementation exposes an MA layer and a Hugging Face-style causal language model. CPU-offload comparisons are currently in standalone profiling scripts; the repository README does not describe them as integrated into the primary causal LM implementation.</p>
+
+  <div class="tree" data-r>
+    <div class="tree-root">Joluck/memory-attention <span>Repository map</span></div>
+    <div class="tree-row"><span class="br">├─</span><span class="p">fla/layers/memory_attn.py</span><span class="r">Core layer</span><span class="d">Key projections, layer-specific token-indexed memory and value construction.</span></div>
+    <div class="tree-row"><span class="br">├─</span><span class="p">fla/models/memory/</span><span class="r">Model</span><span class="d">Backbone configuration and causal language model interface.</span></div>
+    <div class="tree-row"><span class="br">└─</span><span class="p">profile/</span><span class="r">Profiling</span><span class="d">Reference inference experiments and CPU-offloading traces.</span></div>
+  </div>
+  <p class="more" data-r><a class="btn" href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">View repository <span class="arr">↗</span></a></p>
+</section>
+
+<!-- ───────────── 06 Citation ───────────── -->
+<section class="sec" id="citation" aria-labelledby="h-cite">
+  <header class="sec-head" data-r>
+    <div class="lab"><b>§ 06</b>Citation</div>
+    <h2 id="h-cite">Cite <em>this work.</em></h2>
+  </header>
+  <div class="bib" data-r>
+    <div class="bib-h"><span>BibTeX</span>
+      <button class="copy" id="copy" type="button"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 3.2V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v6.5a1 1 0 0 0 1 1h.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span>Copy</span></button>
+    </div>
+<pre id="bib"><span class="ty">@misc</span>{<span class="ky">kang2026memoryattention</span>,
+  <span class="f">title</span>={<span class="s">Memory Attention</span>},
+  <span class="f">author</span>={<span class="s">Jiale Kang</span>},
+  <span class="f">year</span>={<span class="s">2026</span>},
+  <span class="f">eprint</span>={<span class="s">2609.28399</span>},
+  <span class="f">archivePrefix</span>={<span class="s">arXiv</span>},
+  <span class="f">primaryClass</span>={<span class="s">cs.LG</span>},
+  <span class="f">url</span>={<span class="s">https://arxiv.org/abs/2609.28399</span>}
+}</pre>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-in">
+    <a class="brand" href="#top"><span class="glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>© 2026</a>
+    <p>Memory Attention · Jiale Kang. Figures are conceptual; all numbers are taken from the paper.<br>Set in Instrument Serif, Newsreader and Geist.</p>
+    <div class="links">
+      <a href="https://arxiv.org/abs/2609.28399" target="_blank" rel="noopener">Paper ↗</a>
+      <a href="https://github.com/Joluck/memory-attention" target="_blank" rel="noopener">Code ↗</a>
+      <a href="#top">Top ↑</a>
+    </div>
+  </div>
+</footer>
+
 <script>
 "use strict";
-
-const NS="http://www.w3.org/2000/svg";
 const $=id=>document.getElementById(id);
-
-const promptTokens=[
-  "Memory","attention","retrieves","historical","token","IDs","from","CPU"
-];
-
-const N=promptTokens.length;
-const C=32;
-const GAP=3;
-const STEP=C+GAP;
-
-let token=1;
-let playing=false;
-let timer=null;
-let promptReady=false;
-let resizeObserver=null;
-
+const NS="http://www.w3.org/2000/svg";
 const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const pad=n=>String(n).padStart(2,"0");
+const SUBS="₀₁₂₃₄₅₆₇₈₉";
+const sub=n=>String(n).split("").map(d=>SUBS[d]).join("");
 
-/* SVG helpers */
+const WORDS=["Memory","attention","retrieves","historical","token","IDs","from","CPU"];
+const IDS=[14837,6144,49213,13591,3263,7390,422,22813]; // illustrative
+const N=WORDS.length;
 
-function create(tag,attributes={},content){
-  const element=document.createElementNS(NS,tag);
-  for(const [key,value] of Object.entries(attributes)){
-    element.setAttribute(key,String(value));
+/* ───────────── Chrome: top bar, reveals, active section ───────────── */
+const bar=$("top-bar");
+const onScroll=()=>bar.classList.toggle("scrolled",scrollY>8);
+addEventListener("scroll",onScroll,{passive:true});onScroll();
+
+if(!CSS.supports("animation-timeline: scroll()")){
+  const line=document.querySelector(".readline");
+  const upd=()=>{const h=document.documentElement.scrollHeight-innerHeight;line.style.transform=`scaleX(${h>0?scrollY/h:0})`};
+  addEventListener("scroll",upd,{passive:true});addEventListener("resize",upd);upd();
+}
+
+const revealIO=new IntersectionObserver(es=>{
+  for(const e of es)if(e.isIntersecting){e.target.classList.add("in");revealIO.unobserve(e.target)}
+},{rootMargin:"0px 0px -8% 0px",threshold:.08});
+document.querySelectorAll("[data-r]").forEach(el=>revealIO.observe(el));
+
+const navLinks=[...document.querySelectorAll(".nav a")];
+const secIO=new IntersectionObserver(es=>{
+  for(const e of es)if(e.isIntersecting){
+    navLinks.forEach(a=>a.classList.toggle("active",a.dataset.s===e.target.id));
   }
-  if(content!==undefined)element.textContent=content;
-  return element;
-}
+},{rootMargin:"-45% 0px -50% 0px"});
+document.querySelectorAll("section.sec").forEach(s=>secIO.observe(s));
 
-function add(parent,tag,attributes={},content){
-  const element=create(tag,attributes,content);
-  parent.appendChild(element);
-  return element;
-}
+/* ───────────── Fig. 1 — memory table ───────────── */
+(function heroFigure(){
+  const seq=$("mtSeq"),rows=$("mtRows"),eq=$("mtEq");
+  WORDS.forEach(w=>{const s=document.createElement("span");s.textContent=w;seq.append(s)});
+  const order=WORDS.map((w,i)=>i).sort((a,b)=>IDS[a]-IDS[b]);
+  const rowOf=[];
+  const gap=()=>{const li=document.createElement("li");li.className="mt-gap";li.innerHTML="<span>⋮</span>";rows.append(li)};
+  gap();
+  order.forEach((wi,k)=>{
+    const li=document.createElement("li");li.className="mt-row";
+    const id=document.createElement("span");id.className="id";id.textContent=IDS[wi];
+    const tk=document.createElement("span");tk.className="tk";tk.textContent=WORDS[wi];
+    const vec=document.createElement("span");vec.className="vec";
+    for(let j=0;j<30;j++){
+      const v=Math.abs(Math.sin(IDS[wi]*.0137+j*1.91)*Math.cos(j*.53+IDS[wi]*.0021));
+      const i=document.createElement("i");i.style.setProperty("--h",(.18+.82*v).toFixed(3));vec.append(i);
+    }
+    li.append(id,tk,vec);rows.append(li);rowOf[wi]=li;
+    if(k===3)gap();
+  });
+  gap();
 
-function square(p,x,y,w,h,cls,rx=2){
-  return add(p,"rect",{x,y,width:w,height:h,rx,class:cls});
-}
+  let step=0,timer=null,visible=false;
+  function show(t){
+    [...seq.children].forEach((s,i)=>{s.classList.toggle("on",i<t);s.classList.toggle("cur",i===t)});
+    rowOf.forEach((r,i)=>{r.classList.toggle("hit",i===t);r.classList.toggle("seen",i<t)});
+    eq.innerHTML=`V${sub(t+1)} = K${sub(t+1)} + <span class="m"><span class="mb">M</span>[${IDS[t]}]</span>`;
+  }
+  function tick(){
+    show(step);
+    const last=step===N-1;
+    step=last?0:step+1;
+    timer=setTimeout(tick,last?2600:1250);
+  }
+  show(0);
+  if(reduced)return;
+  new IntersectionObserver(([e])=>{
+    visible=e.isIntersecting;
+    if(visible&&!timer)timer=setTimeout(tick,900);
+    if(!visible&&timer){clearTimeout(timer);timer=null}
+  },{threshold:.2}).observe(document.querySelector(".mt"));
+})();
 
-function label(p,x,y,value,cls="svg-index",anchor="start"){
-  return add(p,"text",{x,y,class:cls,"text-anchor":anchor},value);
-}
+/* ───────────── Fig. 2 — interactive comparison ───────────── */
+const C=32,GAP=3,STEP=C+GAP,DIM=N*STEP-GAP;
+const G={qX:42,qY:178,aX:155,aY:178,kY:91,outY:525,vX:478,lx:484,ly:226,ls:16,lstep:19};
+let token=1,playing=false,userPaused=false,timer=null,speed=1600,demoVisible=false;
 
-function installMarkers(p,id){
+function add(p,tag,attrs={},text){
+  const el=document.createElementNS(NS,tag);
+  for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));
+  if(text!==undefined)el.textContent=text;
+  p.appendChild(el);return el;
+}
+const rect=(p,x,y,w,h,cls,rx=2)=>add(p,"rect",{x,y,width:w,height:h,rx,class:cls});
+const text=(p,x,y,v,cls="",anchor="start")=>add(p,"text",{x,y,class:cls,"text-anchor":anchor},v);
+
+function buildPanel(id,mem){
+  const p=$(id);p.replaceChildren();
   const defs=add(p,"defs");
-
-  for(const [name,color] of [
-    ["blue","#8cacc0"],
-    ["green","#a5c0a9"],
-    ["copper","#be9c75"]
-  ]){
-    const marker=add(defs,"marker",{
-      id:`${id}-${name}`,
-      viewBox:"0 0 10 10",
-      refX:9,refY:5,
-      markerWidth:5,markerHeight:5,
-      orient:"auto"
-    });
-
-    add(marker,"path",{d:"M0 0 L10 5 L0 10Z",fill:color});
+  for(const n of ["ink","blue","cpu"]){
+    const m=add(defs,"marker",{id:`${id}-${n}`,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:5.5,markerHeight:5.5,orient:"auto"});
+    add(m,"path",{d:"M0 0 L10 5 L0 10Z",class:`mk-${n}`});
   }
-}
+  const R={q:[],qi:[],k:[],ki:[],att:[],v:[],lk:[],out:[],oi:[]};
+  const {qX,qY,aX,aY,kY,outY,vX,lx,ly,ls,lstep}=G;
 
-/* Rolling prompt */
-
-function initializePrompt(){
-  if(promptReady)return;
-
-  const row=$("promptRow");
-
-  promptTokens.forEach((word,index)=>{
-    const chip=document.createElement("button");
-    chip.type="button";
-    chip.className="prompt-token future";
-
-    const number=document.createElement("span");
-    number.className="number";
-    number.textContent=String(index+1).padStart(2,"0");
-
-    const wordNode=document.createElement("span");
-    wordNode.className="word";
-    wordNode.textContent=word;
-
-    chip.append(number,wordNode);
-
-    chip.addEventListener("click",()=>{
-      pause();
-      token=index+1;
-      render();
-    });
-
-    row.append(chip);
-  });
-
-  promptReady=true;
-
-  const viewport=$("promptViewport");
-
-  if("ResizeObserver" in window){
-    resizeObserver=new ResizeObserver(()=>{alignPrompt(true);});
-    resizeObserver.observe(viewport);
+  if(mem){
+    rect(p,454,119,187,395,"cpu",8);
+    text(p,469,143,"CPU · HOST MEMORY","cpu-t");
+    text(p,469,186,"M","h m");
+    add(p,"line",{x1:475,y1:163,x2:494,y2:163,class:"mbar"});
+    text(p,499,186,"lookup by token ID","sub");
+    text(p,469,203,"Historical prefix","sub");
   }else{
-    window.addEventListener("resize",()=>{alignPrompt(true);});
+    text(p,vX,qY-27,"V","h");
+    text(p,vX+24,qY-27,"GPU cache","sub");
   }
-}
+  text(p,qX,qY-27,"Q","h");
+  text(p,aX,kY-40,"K","h");
+  text(p,aX+24,kY-40,"GPU cache","sub");
+  text(p,aX-112,outY+22,"Output","h");
 
-function alignPrompt(immediate=false){
-  const track=$("promptTrack");
-  const viewport=$("promptViewport");
-  const current=$("promptRow").children[token-1];
-
-  if(!current)return;
-
-  const center=current.offsetLeft+current.offsetWidth/2;
-  const destination=viewport.clientWidth/2-center;
-
-  if(immediate){
-    track.style.transition="none";
-    track.style.transform=`translate3d(${destination}px,0,0)`;
-
-    requestAnimationFrame(()=>{
-      requestAnimationFrame(()=>{track.style.transition="";});
-    });
-  }else{
-    track.style.transform=`translate3d(${destination}px,0,0)`;
-  }
-}
-
-function updatePrompt(){
-  initializePrompt();
-
-  Array.from($("promptRow").children).forEach((chip,index)=>{
-    chip.classList.toggle("past",index<token-1);
-    chip.classList.toggle("current",index===token-1);
-    chip.classList.toggle("future",index>token-1);
-
-    chip.setAttribute("aria-current",index===token-1?"step":"false");
-  });
-
-  $("currentWord").textContent=promptTokens[token-1];
-  $("tokenFraction").textContent=
-    `${String(token).padStart(2,"0")} of ${String(N).padStart(2,"0")}`;
-
-  alignPrompt();
-}
-
-/* Matrix visualization */
-
-function drawPanel(id,isMemory){
-  const p=$(id);
-  p.replaceChildren();
-  installMarkers(p,id);
-
-  const qX=42,qY=178;
-  const aX=155,aY=178;
-  const kX=aX,kY=91;
-  const outX=aX,outY=525;
-  const vX=478,vY=178;
-  const dimension=N*STEP-GAP;
-
-  function edge(d,style="green"){
-    add(p,"path",{
-      d,
-      class:"link "+(style==="copper"?"cpu":style==="blue"?"blue":""),
-      "marker-end":`url(#${id}-${style})`
-    });
-  }
-
-  if(isMemory){
-    square(p,454,119,187,395,"cpu-zone",12);
-    label(p,469,141,"CPU / MEMORY LOOKUP","cpu-text");
-    label(p,469,157,"CPU resident · M[IDs]","svg-sub");
-  }
-
-  label(p,qX,qY-25,"Q","svg-heading");
-  label(p,kX,kY-44,"K","svg-heading");
-  label(p,kX,kY-30,"GPU cache","svg-sub");
-  label(p,outX-100,outY+23,"Output","svg-heading");
-
-  if(!isMemory){
-    label(p,vX,vY-25,"V","svg-heading");
-    label(p,vX,vY-11,"GPU cache","svg-sub");
-  }else{
-    label(p,469,186,"Memory lookup","svg-heading");
-    label(p,469,201,"Historical prefix","svg-sub");
-  }
-
-  // Query
   for(let i=0;i<N;i++){
-    const y=qY+i*STEP;
-    square(p,qX,y,C,C,"cell"+(i===token-1?" q-current":""));
-    label(p,qX-12,y+21,i+1,"svg-index","end");
+    R.q.push(rect(p,qX,qY+i*STEP,C,C,"cell"));
+    R.qi.push(text(p,qX-12,qY+i*STEP+20,i+1,"","end"));
   }
-
-  // Cached keys
   for(let j=0;j<N;j++){
-    const x=kX+j*STEP;
-    const cls=j===token-1?"k-current":j<token-1?"k-old":"";
-    square(p,x,kY,C,C,"cell "+cls);
-    label(p,x+C/2,kY-12,j+1,"svg-index","middle");
+    R.k.push(rect(p,aX+j*STEP,kY,C,C,"cell"));
+    R.ki.push(text(p,aX+j*STEP+C/2,kY-11,j+1,"","middle"));
   }
-
-  // Attention matrix
   for(let i=0;i<N;i++){
-    for(let j=0;j<N;j++){
-      let cls="";
-      if(i<token-1 && j<=i)cls="att-old";
-      if(i===token-1 && j<token)cls="att-current";
-      if(i===token-1 && j===token-1)cls="att-focus";
-      square(p,aX+j*STEP,aY+i*STEP,C,C,"cell "+cls);
-    }
+    R.att[i]=[];
+    for(let j=0;j<N;j++)R.att[i][j]=rect(p,aX+j*STEP,aY+i*STEP,C,C,j>i?"cell masked":"cell");
   }
-
-  if(!isMemory){
+  if(!mem){
     for(let i=0;i<N;i++){
-      let cls="";
-      if(i<token-1)cls="v-old";
-      if(i===token-1)cls="v-current";
-      square(p,vX,vY+i*STEP,C,C,"cell "+cls);
-      label(p,vX+C+10,vY+i*STEP+21,i+1,"svg-index");
+      R.v.push(rect(p,vX,aY+i*STEP,C,C,"cell"));
+      text(p,vX+C+10,aY+i*STEP+20,i+1);
     }
   }else{
-    const lx=469,ly=225;
-    const small=17;
-    const space=3;
-    const step=small+space;
-
-    for(let j=0;j<N;j++){
-      label(p,lx+j*step+small/2,ly-9,j+1,"svg-index","middle");
-    }
-
+    for(let j=0;j<N;j++)text(p,lx+j*lstep+ls/2,ly-8,j+1,"","middle");
     for(let i=0;i<N;i++){
-      for(let j=0;j<N;j++){
-        let cls="";
-        if(i<token-1 && j<=i)cls="lookup-old";
-        if(i===token-1 && j<token)cls="lookup-current";
-        if(i===token-1 && j===token-1)cls="lookup-focus";
-        square(p,lx+j*step,ly+i*step,small,small,"cell "+cls,2);
-      }
-      label(p,lx-9,ly+i*step+13,i+1,"svg-index","end");
+      R.lk[i]=[];
+      for(let j=0;j<N;j++)R.lk[i][j]=rect(p,lx+j*lstep,ly+i*lstep,ls,ls,j>i?"cell masked":"cell",1.5);
+      text(p,lx-8,ly+i*lstep+12,i+1,"","end");
     }
-
-    label(p,469,410,`Step ${token} · M[IDs₁…${token}]`,"cpu-note");
-    label(p,469,431,"Repeated history lookup","cpu-note");
-    label(p,469,450,"CPU → H2D → temporary V","cpu-note");
+    R.n1=text(p,469,414,"","cpu-n strong");
+    text(p,469,434,"Repeated history lookup","cpu-n");
+    text(p,469,452,"CPU → H2D → temporary V","cpu-n");
   }
-
-  // Output
   for(let j=0;j<N;j++){
-    let cls="";
-    if(j<token-1)cls="output-old";
-    if(j===token-1)cls="output-current";
-    square(p,outX+j*STEP,outY,C,C,"cell "+cls);
-    label(p,outX+j*STEP+C/2,outY+48,j+1,"svg-index","middle");
+    R.out.push(rect(p,aX+j*STEP,outY,C,C,"cell"));
+    R.oi.push(text(p,aX+j*STEP+C/2,outY+50,j+1,"","middle"));
   }
+  text(p,aX+DIM/2,494,"Attention scores · causal mask","lbl","middle");
+  text(p,aX+DIM/2,612,mem?"Values are reconstructed for each step":"Keys and values remain cached","lbl","middle");
 
-  // Connections
-  const qCenter=qY+(token-1)*STEP+C/2;
-  const kCenter=kX+(token-1)*STEP+C/2;
-  const outCenter=outX+(token-1)*STEP+C/2;
-
-  edge(`M${qX+C+9} ${qCenter} H${aX-10}`,"blue");
-  edge(`M${kCenter} ${kY+C+7} V${aY-10}`);
-  edge(`M${outCenter} ${aY+dimension+9} V${outY-10}`);
-
-  if(!isMemory){
-    const vCenter=vY+(token-1)*STEP+C/2;
-    edge(`M${vX-8} ${vCenter} H${aX+dimension+9}`);
-  }else{
-    const lookupCenter=225+(token-1)*20+8.5;
-    edge(`M${454} ${lookupCenter} H${aX+dimension+9}`,"copper");
-  }
-
-  label(p,aX+dimension/2,493,"Attention scores · causal mask","svg-label","middle");
-  label(p,aX+dimension/2,614,
-    isMemory?"Values are reconstructed for each step":"Keys and values remain cached",
-    "svg-label","middle");
+  const edge=(d,style)=>{
+    const g=add(p,"g",{class:"mv"});
+    add(g,"path",{d,class:"link "+(style==="cpu"?"cpu":style==="blue"?"blue":""),"marker-end":`url(#${id}-${style})`});
+    return g;
+  };
+  R.eq=edge(`M${qX+C+8} ${qY+C/2} H${aX-9}`,"blue");
+  R.ek=edge(`M${aX+C/2} ${kY+C+7} V${aY-9}`,"ink");
+  R.eo=edge(`M${aX+C/2} ${aY+DIM+8} V${outY-9}`,"ink");
+  if(mem)R.el=edge(`M454 ${ly+ls/2} H${aX+DIM+9}`,"cpu");
+  else R.ev=edge(`M${vX-8} ${aY+C/2} H${aX+DIM+9}`,"ink");
+  return R;
 }
 
-/* Playback */
+function updatePanel(R,mem){
+  const t=token-1;
+  R.q.forEach((el,i)=>el.setAttribute("class","cell"+(i===t?" q-cur":i<t?" q-past":"")));
+  R.qi.forEach((el,i)=>el.setAttribute("class",i===t?"ix-cur":""));
+  R.k.forEach((el,j)=>el.setAttribute("class","cell"+(j===t?" k-cur":j<t?" k-old":"")));
+  R.ki.forEach((el,j)=>el.setAttribute("class",j===t?"ix-cur ix-green":""));
+  R.oi.forEach((el,j)=>el.setAttribute("class",j===t?"ix-cur ix-green":""));
+  for(let i=0;i<N;i++)for(let j=0;j<=i;j++){
+    let c="cell";
+    if(i<t)c+=" att-old";
+    else if(i===t)c+=j===t?" att-focus":" att-cur";
+    R.att[i][j].setAttribute("class",c);
+  }
+  R.out.forEach((el,j)=>el.setAttribute("class","cell"+(j===t?" out-cur":j<t?" out-old":"")));
+  if(mem){
+    for(let i=0;i<N;i++)for(let j=0;j<=i;j++){
+      let c="cell";
+      if(i<t)c+=" lk-old";
+      else if(i===t)c+=j===t?" lk-focus":" lk-cur";
+      R.lk[i][j].setAttribute("class",c);
+    }
+    R.n1.textContent=`Step ${token} · M̄[id${sub(1)} … id${sub(token)}]`;
+    R.el.style.transform=`translate(0px,${t*G.lstep}px)`;
+  }else{
+    R.v.forEach((el,i)=>el.setAttribute("class","cell"+(i===t?" v-cur":i<t?" v-old":"")));
+    R.ev.style.transform=`translate(0px,${t*STEP}px)`;
+  }
+  R.eq.style.transform=`translate(0px,${t*STEP}px)`;
+  R.ek.style.transform=`translate(${t*STEP}px,0px)`;
+  R.eo.style.transform=`translate(${t*STEP}px,0px)`;
+}
+
+const STD=buildPanel("standard",false);
+const MEM=buildPanel("memory",true);
+
+const seqEl=$("seq"),scrubEl=$("scrub");
+WORDS.forEach((w,i)=>{
+  const b=document.createElement("button");
+  b.type="button";b.className="tok";
+  b.innerHTML=`<span class="ix">${pad(i+1)}</span><span>${w}</span>`;
+  b.setAttribute("aria-label",`Token ${i+1}: ${w}`);
+  b.addEventListener("click",()=>go(i+1));
+  seqEl.append(b);
+
+  const s=document.createElement("button");
+  s.type="button";s.className="sb";
+  s.innerHTML=`<i></i><span>${pad(i+1)}</span>`;
+  s.setAttribute("aria-label",`Go to token ${i+1}`);
+  s.addEventListener("click",()=>go(i+1));
+  scrubEl.append(s);
+});
+
+const ICON_PLAY='<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.6v10.8L13 8z" fill="currentColor"/></svg>';
+const ICON_PAUSE='<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.6" y="2.6" width="3" height="10.8" rx=".6" fill="currentColor"/><rect x="9.4" y="2.6" width="3" height="10.8" rx=".6" fill="currentColor"/></svg>';
 
 function render(){
-  updatePrompt();
-  drawPanel("standard",false);
-  drawPanel("memory",true);
-
-  $("phase").textContent=
-    `TOKEN ${String(token).padStart(2,"0")} / ${String(N).padStart(2,"0")}`;
-
-  $("caption").textContent=
-    `“${promptTokens[token-1]}” · Query ${token} attends to `+
-    `positions 1–${token}. Memory Attention retrieves `+
-    `the corresponding memory prefix again from CPU.`;
-
-  $("slider").value=token;
-  $("sliderValue").textContent=String(token).padStart(2,"0");
-
-  $("play").textContent=playing?"Ⅱ":"▶";
-  $("play").setAttribute("aria-label",playing?"Pause":"Play");
-
+  const t=token-1;
+  [...seqEl.children].forEach((b,i)=>{
+    b.classList.toggle("past",i<t);b.classList.toggle("cur",i===t);
+    b.setAttribute("aria-current",i===t?"step":"false");
+  });
+  [...scrubEl.children].forEach((b,i)=>{
+    b.classList.toggle("past",i<t);b.classList.toggle("cur",i===t);
+    b.setAttribute("aria-current",i===t?"step":"false");
+  });
+  updatePanel(STD,false);updatePanel(MEM,true);
+  $("phase").textContent=`TOKEN ${pad(token)} / ${pad(N)}`;
+  $("caption").textContent=`“${WORDS[t]}” — query ${token} attends ${token===1?"only to itself":`to positions 1–${token}`}. Memory Attention retrieves the corresponding memory prefix again from CPU.`;
+  const play=$("play");
+  play.innerHTML=playing?ICON_PAUSE:ICON_PLAY;
+  play.setAttribute("aria-label",playing?"Pause":"Play");
   $("prev").disabled=token===1;
   $("next").disabled=token===N;
-
-  $("progressBar").style.width=`${token/N*100}%`;
+  const curTok=seqEl.children[t];
+  if(curTok)seqEl.scrollTo({left:curTok.offsetLeft-seqEl.clientWidth/2+curTok.offsetWidth/2,behavior:reduced?"auto":"smooth"});
 }
 
-function pause(){
-  if(timer!==null)clearTimeout(timer);
-  timer=null;
-  playing=false;
-  render();
-}
-
-function forward(){token=Math.min(N,token+1);render();}
-function backward(){token=Math.max(1,token-1);render();}
-
-function reset(){pause();token=1;render();}
-
+function stop(){if(timer!==null)clearTimeout(timer);timer=null;playing=false}
 function schedule(){
   if(!playing)return;
-  timer=setTimeout(()=>{
-    token=token===N?1:token+1;
-    render();
-    schedule();
-  },Number($("speed").value));
+  timer=setTimeout(()=>{token=token===N?1:token+1;render();schedule()},token===N?speed*1.6:speed);
 }
+function start(){if(playing)return;playing=true;render();schedule()}
+function pauseByUser(){stop();userPaused=true;render()}
+function go(n){pauseByUser();token=Math.max(1,Math.min(N,n));render()}
 
-function toggle(){
-  if(playing){pause();return;}
-  playing=true;
-  render();
-  schedule();
-}
+$("play").onclick=()=>{if(playing)pauseByUser();else{userPaused=false;start()}};
+$("prev").onclick=()=>go(token-1);
+$("next").onclick=()=>go(token+1);
+$("reset").onclick=()=>go(1);
 
-$("prev").onclick=()=>{pause();backward();};
-$("next").onclick=()=>{pause();forward();};
-$("play").onclick=toggle;
-$("reset").onclick=reset;
-
-$("slider").oninput=e=>{
-  pause();
-  token=Number(e.target.value);
-  render();
-};
-
-$("speed").onchange=()=>{if(playing){pause();toggle();}};
-
-$("copy").onclick=async()=>{
-  try{
-    await navigator.clipboard.writeText($("bib").textContent);
-    $("copy").textContent="Copied";
-    setTimeout(()=>$("copy").textContent="Copy BibTeX",1400);
-  }catch{
-    $("copy").textContent="Select text to copy";
-  }
-};
-
-document.addEventListener("visibilitychange",()=>{
-  if(document.hidden&&playing)pause();
+$("speed").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-ms]");if(!b)return;
+  speed=Number(b.dataset.ms);
+  [...$("speed").children].forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  if(playing){stop();playing=true;schedule()}
 });
+
+new IntersectionObserver(([e])=>{
+  demoVisible=e.isIntersecting;
+  if(demoVisible&&!userPaused&&!reduced)start();
+  else if(!demoVisible&&playing){stop();render()}
+},{threshold:.25}).observe($("plate"));
+
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&playing){stop();render()}});
 
 document.addEventListener("keydown",e=>{
-  const active=document.activeElement?.tagName;
-  if(["INPUT","SELECT","TEXTAREA","BUTTON"].includes(active))return;
-
-  if(e.code==="Space"){e.preventDefault();toggle();}
-  else if(e.code==="ArrowRight"){pause();forward();}
-  else if(e.code==="ArrowLeft"){pause();backward();}
+  if(!demoVisible||e.metaKey||e.ctrlKey||e.altKey)return;
+  const tag=document.activeElement?.tagName;
+  if(["INPUT","SELECT","TEXTAREA"].includes(tag))return;
+  if(e.code==="Space"&&tag!=="BUTTON"&&tag!=="A"){e.preventDefault();$("play").click()}
+  else if(e.code==="ArrowRight"){e.preventDefault();go(token+1)}
+  else if(e.code==="ArrowLeft"){e.preventDefault();go(token-1)}
 });
 
-// Initialize the prompt without an initial sliding transition.
-initializePrompt();
-
-const track=$("promptTrack");
-track.style.transition="none";
 render();
 
-requestAnimationFrame(()=>{
-  requestAnimationFrame(()=>{
-    track.style.transition="";
-    if(!reduced)toggle();
-  });
-});
-</script></body></html>
+/* ───────────── Copy BibTeX ───────────── */
+$("copy").onclick=async()=>{
+  const btn=$("copy"),label=btn.querySelector("span");
+  try{
+    await navigator.clipboard.writeText($("bib").textContent);
+    label.textContent="Copied";btn.classList.add("ok");
+  }catch{
+    const r=document.createRange();r.selectNodeContents($("bib"));
+    const s=getSelection();s.removeAllRanges();s.addRange(r);
+    label.textContent="Selected — press ⌘C";
+  }
+  setTimeout(()=>{label.textContent="Copy";btn.classList.remove("ok")},1800);
+};
+</script>
+</body>
+</html>
